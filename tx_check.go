@@ -88,7 +88,7 @@ func (tx *Tx) checkBucket(b *Bucket, reachable map[pgid]*page, freed map[pgid]bo
 		// Ensure each page is only referenced once.
 		for i := pgid(0); i <= pgid(p.overflow); i++ {
 			var id = p.id + i
-			if _, ok := reachable[id]; ok {
+			if _, ok := reachable[id]; ok { // 每个id只能出现一次
 				ch <- fmt.Errorf("page %d: multiple references (stack: %v)", int(id), stack)
 			}
 			reachable[id] = p

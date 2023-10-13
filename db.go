@@ -206,13 +206,13 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	db.Mlock = options.Mlock
 
 	// Set default values for later DB operations.
-	db.MaxBatchSize = DefaultMaxBatchSize
-	db.MaxBatchDelay = DefaultMaxBatchDelay
-	db.AllocSize = DefaultAllocSize
+	db.MaxBatchSize = DefaultMaxBatchSize   // 1000
+	db.MaxBatchDelay = DefaultMaxBatchDelay // 10 * time.Millisecond
+	db.AllocSize = DefaultAllocSize         // 16 * 1024 * 1024
 
-	flag := os.O_RDWR
+	flag := os.O_RDWR // open the file read-write.
 	if options.ReadOnly {
-		flag = os.O_RDONLY
+		flag = os.O_RDONLY // open the file read-only.
 		db.readOnly = true
 	} else {
 		// always load free pages in write mode
@@ -245,7 +245,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	}
 
 	// Default values for test hooks
-	db.ops.writeAt = db.file.WriteAt
+	db.ops.writeAt = db.file.WriteAt // WriteAt writes len(b) bytes to the File starting at byte offset off.
 
 	if db.pageSize = options.PageSize; db.pageSize == 0 {
 		// Set the default page size to the OS page size.
@@ -253,19 +253,19 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	}
 
 	// Initialize the database if it doesn't exist.
-	if info, err := db.file.Stat(); err != nil {
+	if info, err := db.file.Stat(); err != nil { // Stat returns the FileInfo structure describing file.
 		_ = db.close()
 		return nil, err
 	} else if info.Size() == 0 {
 		// Initialize new files with meta pages.
-		if err := db.init(); err != nil {
+		if err := db.init(); err != nil { // 初始化db.file
 			// clean up file descriptor on initialization fail
 			_ = db.close()
 			return nil, err
 		}
 	} else {
 		// try to get the page size from the metadata pages
-		if pgSize, err := db.getPageSize(); err == nil {
+		if pgSize, err := db.getPageSize(); err == nil { // 读db.file的meta page
 			db.pageSize = pgSize
 		} else {
 			_ = db.close()
@@ -273,7 +273,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 		}
 	}
 
-	// Initialize page pool.
+	// Initialize page pool.  页池
 	db.pagePool = sync.Pool{
 		New: func() interface{} {
 			return make([]byte, db.pageSize)
@@ -281,7 +281,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	}
 
 	// Memory map the data file.
-	if err := db.mmap(options.InitialMmapSize); err != nil {
+	if err := db.mmap(options.InitialMmapSize); err != nil { // // mmap opens the underlying memory-mapped file and initializes the meta references.
 		_ = db.close()
 		return nil, err
 	}
@@ -441,7 +441,7 @@ func (db *DB) mmap(minsz int) (err error) {
 	if size < minsz {
 		size = minsz
 	}
-	size, err = db.mmapSize(size)
+	size, err = db.mmapSize(size) // 确定mmap大小
 	if err != nil {
 		return err
 	}
@@ -466,7 +466,7 @@ func (db *DB) mmap(minsz int) (err error) {
 	// Memory-map the data file as a byte slice.
 	// gofail: var mapError string
 	// return errors.New(mapError)
-	if err = mmap(db, size); err != nil {
+	if err = mmap(db, size); err != nil { // 开启mmap
 		return err
 	}
 
@@ -531,13 +531,13 @@ func (db *DB) munmap() error {
 func (db *DB) mmapSize(size int) (int, error) {
 	// Double the size from 32KB until 1GB.
 	for i := uint(15); i <= 30; i++ {
-		if size <= 1<<i {
+		if size <= 1<<i { // 2^15 ... 2^30(1Gi)
 			return 1 << i, nil
 		}
 	}
 
 	// Verify the requested size is not above the maximum allowed.
-	if size > maxMapSize {
+	if size > maxMapSize { // 256TB
 		return 0, fmt.Errorf("mmap too large")
 	}
 
@@ -594,13 +594,13 @@ func (db *DB) mrelock(fileSizeFrom, fileSizeTo int) error {
 func (db *DB) init() error {
 	// Create two meta pages on a buffer.
 	buf := make([]byte, db.pageSize*4)
-	for i := 0; i < 2; i++ {
-		p := db.pageInBuffer(buf, pgid(i))
+	for i := 0; i < 2; i++ { // 在buf里面建立了两个page？
+		p := db.pageInBuffer(buf, pgid(i)) // pageInBuffer retrieves a page reference from a given byte array based on the current page size.
 		p.id = pgid(i)
 		p.flags = metaPageFlag
 
 		// Initialize the meta page.
-		m := p.meta()
+		m := p.meta() // meta returns a pointer to the metadata section of the page.
 		m.magic = magic
 		m.version = version
 		m.pageSize = uint32(db.pageSize)
@@ -612,19 +612,19 @@ func (db *DB) init() error {
 	}
 
 	// Write an empty freelist at page 3.
-	p := db.pageInBuffer(buf, pgid(2))
+	p := db.pageInBuffer(buf, pgid(2)) // 再搞一个page
 	p.id = pgid(2)
 	p.flags = freelistPageFlag
 	p.count = 0
 
 	// Write an empty leaf page at page 4.
-	p = db.pageInBuffer(buf, pgid(3))
+	p = db.pageInBuffer(buf, pgid(3)) // 再搞一个page
 	p.id = pgid(3)
 	p.flags = leafPageFlag
 	p.count = 0
 
 	// Write the buffer to our data file.
-	if _, err := db.ops.writeAt(buf, 0); err != nil {
+	if _, err := db.ops.writeAt(buf, 0); err != nil { // WriteAt: writes len(b) bytes to the File starting at byte offset off.
 		return err
 	}
 	if err := fdatasync(db); err != nil {
@@ -1203,8 +1203,8 @@ func (db *DB) freepages() []pgid {
 	// TODO: If check bucket reported any corruptions (ech) we shouldn't proceed to freeing the pages.
 
 	var fids []pgid
-	for i := pgid(2); i < db.meta().pgid; i++ {
-		if _, ok := reachable[i]; !ok {
+	for i := pgid(2); i < db.meta().pgid; i++ { // 从第3个page开始
+		if _, ok := reachable[i]; !ok { // 不能reach的才append进来?
 			fids = append(fids, i)
 		}
 	}
@@ -1223,12 +1223,12 @@ type Options struct {
 
 	// Do not sync freelist to disk. This improves the database write performance
 	// under normal operation, but requires a full database re-sync during recovery.
-	NoFreelistSync bool
+	NoFreelistSync bool // freelist是啥
 
 	// PreLoadFreelist sets whether to load the free pages when opening
 	// the db file. Note when opening db in write mode, bbolt will always
 	// load the free pages.
-	PreLoadFreelist bool
+	PreLoadFreelist bool // 加载空闲页？啥意思啊
 
 	// FreelistType sets the backend freelist type. There are two options. Array which is simple but endures
 	// dramatic performance degradation if database is large and fragmentation in freelist is common.
@@ -1323,7 +1323,7 @@ type meta struct {
 	pageSize uint32
 	flags    uint32
 	root     bucket
-	freelist pgid
+	freelist pgid // pageId
 	pgid     pgid
 	txid     txid
 	checksum uint64

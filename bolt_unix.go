@@ -18,7 +18,7 @@ func flock(db *DB, exclusive bool, timeout time.Duration) error {
 	if timeout != 0 {
 		t = time.Now()
 	}
-	fd := db.file.Fd()
+	fd := db.file.Fd() // Fd returns the integer Unix file descriptor referencing the open file.
 	flag := syscall.LOCK_NB
 	if exclusive {
 		flag |= syscall.LOCK_EX
@@ -65,7 +65,7 @@ func mmap(db *DB, sz int) error {
 	}
 
 	// Save the original byte slice and convert to a byte array pointer.
-	db.dataref = b
+	db.dataref = b // 保存mmap引用
 	db.data = (*[maxMapSize]byte)(unsafe.Pointer(&b[0]))
 	db.datasz = sz
 	return nil
