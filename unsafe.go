@@ -36,4 +36,4 @@ func unsafeSlice(slice, data unsafe.Pointer, len int) {
 	s.Data = uintptr(data)
 	s.Cap = len
 	s.Len = len
-}
+} // 它的目的是直接修改一个已有切片的Data、Len和Cap字段，使得这个切片指向新的内存地址并具有新的长度和容量。

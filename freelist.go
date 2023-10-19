@@ -17,7 +17,7 @@ type txPending struct {
 // pidSet holds the set of starting pgids which have the same span size
 type pidSet map[pgid]struct{}
 
-// freelist represents a list of all pages that are available for allocation.
+// freelist represents a list of all pages that are available for allocation. 空闲页列表
 // It also tracks pages that have been freed but are still in use by open transactions.
 type freelist struct {
 	freelistType   FreelistType                // freelist type
@@ -47,7 +47,7 @@ func newFreelist(freelistType FreelistType) *freelist {
 		backwardMap:  make(map[pgid]uint64),
 	}
 
-	if freelistType == FreelistMapType {
+	if freelistType == FreelistMapType { // 这里所有函数围绕f.ids展开
 		f.allocate = f.hashmapAllocate
 		f.free_count = f.hashmapFreeCount
 		f.mergeSpans = f.hashmapMergeSpans
@@ -105,7 +105,7 @@ func (f *freelist) copyall(dst []pgid) {
 }
 
 // arrayAllocate returns the starting page id of a contiguous list of pages of a given size.
-// If a contiguous block cannot be found then 0 is returned.
+// If a contiguous block cannot be found then 0 is returned. 这个方法搜索freelist中的连续页面ID块，并尝试为给定的大小分配它们。如果成功分配，则这些页面ID从freelist中移除，反之返回0。
 func (f *freelist) arrayAllocate(txid txid, n int) pgid {
 	if len(f.ids) == 0 {
 		return 0
@@ -118,12 +118,12 @@ func (f *freelist) arrayAllocate(txid txid, n int) pgid {
 		}
 
 		// Reset initial page if this is not contiguous.
-		if previd == 0 || id-previd != 1 {
+		if previd == 0 || id-previd != 1 { // 注意 f.ids里面的id的数值不一定连续，可能是 1023, 1024, 1030, 1031
 			initial = id
 		}
 
 		// If we found a contiguous block then remove it and return it.
-		if (id-initial)+1 == pgid(n) {
+		if (id-initial)+1 == pgid(n) { // 找到一个连续大小为n的pages
 			// If we're allocating off the beginning then take the fast path
 			// and just adjust the existing slice. This will use extra memory
 			// temporarily but the append() in free() will realloc the slice
@@ -132,14 +132,14 @@ func (f *freelist) arrayAllocate(txid txid, n int) pgid {
 				f.ids = f.ids[i+1:]
 			} else {
 				copy(f.ids[i-n+1:], f.ids[i+1:])
-				f.ids = f.ids[:len(f.ids)-n]
+				f.ids = f.ids[:len(f.ids)-n] // 从f.ids中删除这些连续的页面ID
 			}
 
 			// Remove from the free cache.
 			for i := pgid(0); i < pgid(n); i++ {
-				delete(f.cache, initial+i)
+				delete(f.cache, initial+i) // 从f.cache中删除这些页面ID
 			}
-			f.allocs[initial] = txid
+			f.allocs[initial] = txid // 在f.allocs中标记这些页面ID已被给定的事务ID分配。
 			return initial
 		}
 
@@ -283,8 +283,8 @@ func (f *freelist) read(p *page) {
 		f.ids = nil
 	} else {
 		var ids []pgid
-		data := unsafeIndex(unsafe.Pointer(p), unsafe.Sizeof(*p), unsafe.Sizeof(ids[0]), idx)
-		unsafeSlice(unsafe.Pointer(&ids), data, count)
+		data := unsafeIndex(unsafe.Pointer(p), unsafe.Sizeof(*p), unsafe.Sizeof(ids[0]), idx) // p + sizeof(p) + sizeof(id)*idx
+		unsafeSlice(unsafe.Pointer(&ids), data, count)                                        // 使ids指向新的内存地址，并具有新的长度和容量
 
 		// copy the ids, so we don't modify on the freelist page directly
 		idsCopy := make([]pgid, count)

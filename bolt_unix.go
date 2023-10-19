@@ -21,7 +21,7 @@ func flock(db *DB, exclusive bool, timeout time.Duration) error {
 	fd := db.file.Fd() // Fd returns the integer Unix file descriptor referencing the open file.
 	flag := syscall.LOCK_NB
 	if exclusive {
-		flag |= syscall.LOCK_EX
+		flag |= syscall.LOCK_EX // 如果不是readonly，则为独占锁
 	} else {
 		flag |= syscall.LOCK_SH
 	}
@@ -51,7 +51,7 @@ func funlock(db *DB) error {
 
 // mmap memory maps a DB's data file.
 func mmap(db *DB, sz int) error {
-	// Map the data file to memory.
+	// Map the data file to memory. db文件是mmap到内存的
 	b, err := unix.Mmap(int(db.file.Fd()), 0, sz, syscall.PROT_READ, syscall.MAP_SHARED|db.MmapFlags)
 	if err != nil {
 		return err
@@ -65,11 +65,11 @@ func mmap(db *DB, sz int) error {
 	}
 
 	// Save the original byte slice and convert to a byte array pointer.
-	db.dataref = b // 保存mmap引用
-	db.data = (*[maxMapSize]byte)(unsafe.Pointer(&b[0]))
+	db.dataref = b                                       // 保存mmap引用
+	db.data = (*[maxMapSize]byte)(unsafe.Pointer(&b[0])) // 用一个byte slice来存内存数据
 	db.datasz = sz
 	return nil
-}
+} // boltdb 没有实现 page cache，而是调用 mmap() 将整个文件映射进来，并调用 madvise(MADV_RANDOM) 由操作系统管理 page cache，后续对磁盘上文件的所有读操作直接读取 db.data 即可，简化了实现
 
 // munmap unmaps a DB's data file from memory.
 func munmap(db *DB) error {

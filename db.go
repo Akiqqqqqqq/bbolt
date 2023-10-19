@@ -234,7 +234,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 
 	// Lock file so that other processes using Bolt in read-write mode cannot
 	// use the database  at the same time. This would cause corruption since
-	// the two processes would write meta pages and free pages separately.
+	// the two processes would write meta pages and free pages separately.  元数据页 & 空闲页
 	// The database file is locked exclusively (only one process can grab the lock)
 	// if !options.ReadOnly.
 	// The database file is locked using the shared lock (more than one process may
@@ -258,7 +258,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 		return nil, err
 	} else if info.Size() == 0 {
 		// Initialize new files with meta pages.
-		if err := db.init(); err != nil { // 初始化db.file
+		if err := db.init(); err != nil { // 初始化db.file：申请了4个page，然后写到db文件
 			// clean up file descriptor on initialization fail
 			_ = db.close()
 			return nil, err
@@ -281,7 +281,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	}
 
 	// Memory map the data file.
-	if err := db.mmap(options.InitialMmapSize); err != nil { // // mmap opens the underlying memory-mapped file and initializes the meta references.
+	if err := db.mmap(options.InitialMmapSize); err != nil { // mmap opens the underlying memory-mapped file and initializes the meta references.
 		_ = db.close()
 		return nil, err
 	}
@@ -406,20 +406,20 @@ func (db *DB) getPageSizeFromSecondMeta() (int, bool, error) {
 // concurrent accesses being made to the freelist.
 func (db *DB) loadFreelist() {
 	db.freelistLoad.Do(func() {
-		db.freelist = newFreelist(db.FreelistType)
+		db.freelist = newFreelist(db.FreelistType) // 实例化freeList成员变量
 		if !db.hasSyncedFreelist() {
 			// Reconstruct free list by scanning the DB.
 			db.freelist.readIDs(db.freepages())
 		} else {
 			// Read free list from freelist page.
-			db.freelist.read(db.page(db.meta().freelist))
+			db.freelist.read(db.page(db.meta().freelist)) // db.meta().freelist初始为2; db.page(db.meta().freelist)拿到第3个page, 也就是freelistPage类型的page
 		}
 		db.stats.FreePageN = db.freelist.free_count()
 	})
 }
 
 func (db *DB) hasSyncedFreelist() bool {
-	return db.meta().freelist != pgidNoFreelist
+	return db.meta().freelist != pgidNoFreelist // freelist 初始为2
 }
 
 // mmap opens the underlying memory-mapped file and initializes the meta references.
@@ -466,7 +466,7 @@ func (db *DB) mmap(minsz int) (err error) {
 	// Memory-map the data file as a byte slice.
 	// gofail: var mapError string
 	// return errors.New(mapError)
-	if err = mmap(db, size); err != nil { // 开启mmap
+	if err = mmap(db, size); err != nil { // 开启mmap, 获取db文件在内存的mmap引用
 		return err
 	}
 
@@ -593,9 +593,9 @@ func (db *DB) mrelock(fileSizeFrom, fileSizeTo int) error {
 // init creates a new database file and initializes its meta pages.
 func (db *DB) init() error {
 	// Create two meta pages on a buffer.
-	buf := make([]byte, db.pageSize*4)
-	for i := 0; i < 2; i++ { // 在buf里面建立了两个page？
-		p := db.pageInBuffer(buf, pgid(i)) // pageInBuffer retrieves a page reference from a given byte array based on the current page size.
+	buf := make([]byte, db.pageSize*4) // 内存里面申请4个page的地址和空间
+	for i := 0; i < 2; i++ {           // 在buf里面建立两个meta page
+		p := db.pageInBuffer(buf, pgid(i)) // pageInBuffer retrieves a page reference from a given byte array based on the current page size. 返回page指针
 		p.id = pgid(i)
 		p.flags = metaPageFlag
 
@@ -604,26 +604,26 @@ func (db *DB) init() error {
 		m.magic = magic
 		m.version = version
 		m.pageSize = uint32(db.pageSize)
-		m.freelist = 2
-		m.root = bucket{root: 3}
-		m.pgid = 4
-		m.txid = txid(i)
+		m.freelist = 2           // freelist表示存储空闲页的起始页id
+		m.root = bucket{root: 3} // root表示整个db最顶层根节点所在的页id
+		m.pgid = 4               // pgid表示当前db总共占用的物理页数量
+		m.txid = txid(i)         // txid是db当前的事务id, 事务id在创建读写事务的时候自增1
 		m.checksum = m.sum64()
 	}
 
 	// Write an empty freelist at page 3.
-	p := db.pageInBuffer(buf, pgid(2)) // 再搞一个page
+	p := db.pageInBuffer(buf, pgid(2)) // 再搞一个freelistPage类型的page
 	p.id = pgid(2)
 	p.flags = freelistPageFlag
 	p.count = 0
 
 	// Write an empty leaf page at page 4.
-	p = db.pageInBuffer(buf, pgid(3)) // 再搞一个page
+	p = db.pageInBuffer(buf, pgid(3)) // 再搞一个leafPage类型的page
 	p.id = pgid(3)
-	p.flags = leafPageFlag
+	p.flags = leafPageFlag // 这个相当于是root node page
 	p.count = 0
 
-	// Write the buffer to our data file.
+	// Write the buffer to our data file. 在db文件开头offset=0的地方，写“buf”：就是把2个meta page、一个freelistPage的page和一个leafPage的page写到db文件
 	if _, err := db.ops.writeAt(buf, 0); err != nil { // WriteAt: writes len(b) bytes to the File starting at byte offset off.
 		return err
 	}
@@ -1070,13 +1070,13 @@ func (db *DB) Info() *Info {
 
 // page retrieves a page reference from the mmap based on the current page size.
 func (db *DB) page(id pgid) *page {
-	pos := id * pgid(db.pageSize)
-	return (*page)(unsafe.Pointer(&db.data[pos]))
+	pos := id * pgid(db.pageSize)                 // 2*sizeof(page) 前两个是meta pages
+	return (*page)(unsafe.Pointer(&db.data[pos])) // 前两个meta pages后的position
 }
 
 // pageInBuffer retrieves a page reference from a given byte array based on the current page size.
 func (db *DB) pageInBuffer(b []byte, id pgid) *page {
-	return (*page)(unsafe.Pointer(&b[id*pgid(db.pageSize)]))
+	return (*page)(unsafe.Pointer(&b[id*pgid(db.pageSize)])) // 返回b中，第0、1、2、3个page位置的page指针；pageSize为4096 bytes
 }
 
 // meta retrieves the current meta page reference.

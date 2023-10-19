@@ -20,7 +20,7 @@ func (f *freelist) hashmapAllocate(txid txid, n int) pgid {
 
 	// if we have a exact size match just return short path
 	if bm, ok := f.freemaps[uint64(n)]; ok {
-		for pid := range bm {
+		for pid := range bm { // bm是一个hashSet
 			// remove the span
 			f.delSpan(pid, uint64(n))
 

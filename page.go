@@ -15,10 +15,10 @@ const branchPageElementSize = unsafe.Sizeof(branchPageElement{})
 const leafPageElementSize = unsafe.Sizeof(leafPageElement{})
 
 const (
-	branchPageFlag   = 0x01
-	leafPageFlag     = 0x02
-	metaPageFlag     = 0x04
-	freelistPageFlag = 0x10
+	branchPageFlag   = 0x01 // 存放 branch node 的数据
+	leafPageFlag     = 0x02 // 存放 leaf node 的数据
+	metaPageFlag     = 0x04 // 存放 db 的 meta data
+	freelistPageFlag = 0x10 // 存放 db 的空闲 page
 )
 
 const (
@@ -28,11 +28,11 @@ const (
 type pgid uint64
 
 type page struct {
-	id       pgid
-	flags    uint16
-	count    uint16
-	overflow uint32
-}
+	id       pgid   // page id (8 bytes)
+	flags    uint16 // 区分不同类型的 page (2 bytes)
+	count    uint16 // leaf node：数据个数；branch node：子结点数量 (2 bytes)
+	overflow uint32 // 若单个 page 大小不够，会分配多个 page; overflow字段代表Page Body往后延伸占用了多少个物理页，也就是该逻辑page除本物理页还占用了几个连续物理页。 (4 bytes)
+} // 上述4个字段一共16 bytes， pageSize为4096 bytes，所以其实有很多的空闲区域
 
 // typ returns a human readable page type string used for debugging.
 func (p *page) typ() string {
@@ -50,7 +50,7 @@ func (p *page) typ() string {
 
 // meta returns a pointer to the metadata section of the page.
 func (p *page) meta() *meta {
-	return (*meta)(unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p)))
+	return (*meta)(unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p))) // meta部分紧接在page结构体后面?
 }
 
 func (p *page) fastCheck(id pgid) {
