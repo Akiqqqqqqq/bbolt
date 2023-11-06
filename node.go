@@ -9,7 +9,7 @@ import (
 
 // node represents an in-memory, deserialized page.
 type node struct {
-	bucket     *Bucket
+	bucket     *Bucket // 指针
 	isLeaf     bool
 	unbalanced bool
 	spilled    bool

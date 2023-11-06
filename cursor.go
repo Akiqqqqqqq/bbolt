@@ -156,7 +156,7 @@ func (c *Cursor) Delete() error {
 func (c *Cursor) seek(seek []byte) (key []byte, value []byte, flags uint32) {
 	// Start from root page/node and traverse to correct page.
 	c.stack = c.stack[:0]
-	c.search(seek, c.bucket.root)
+	c.search(seek, c.bucket.root) // c.bucket.root=3
 
 	// If this is a bucket then return a nil value.
 	return c.keyValue()
@@ -269,7 +269,7 @@ func (c *Cursor) prev() (key []byte, value []byte, flags uint32) {
 
 // search recursively performs a binary search against a given page/node until it finds a given key.
 func (c *Cursor) search(key []byte, pgId pgid) {
-	p, n := c.bucket.pageNode(pgId)
+	p, n := c.bucket.pageNode(pgId) // 拿到leafPage和node(nil)
 	if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 {
 		panic(fmt.Sprintf("invalid page type: %d: %x", p.id, p.flags))
 	}
@@ -334,8 +334,8 @@ func (c *Cursor) searchPage(key []byte, p *page) {
 
 // nsearch searches the leaf node on the top of the stack for a key.
 func (c *Cursor) nsearch(key []byte) {
-	e := &c.stack[len(c.stack)-1]
-	p, n := e.page, e.node
+	e := &c.stack[len(c.stack)-1] // 这里面有一个root的elemRef
+	p, n := e.page, e.node        // node是nil
 
 	// If we have a node then search its inodes.
 	if n != nil {
@@ -347,16 +347,16 @@ func (c *Cursor) nsearch(key []byte) {
 	}
 
 	// If we have a page then search its leaf elements.
-	inodes := p.leafPageElements()
+	inodes := p.leafPageElements() // 取回在p后面的一个列表的leafPageElement
 	index := sort.Search(int(p.count), func(i int) bool {
-		return bytes.Compare(inodes[i].key(), key) != -1
+		return bytes.Compare(inodes[i].key(), key) != -1 // 搜索这个key
 	})
-	e.index = index
+	e.index = index // 赋值elemRef.index
 }
 
 // keyValue returns the key and value of the current leaf element.
 func (c *Cursor) keyValue() ([]byte, []byte, uint32) {
-	ref := &c.stack[len(c.stack)-1]
+	ref := &c.stack[len(c.stack)-1] // 取出elemRef
 
 	// If the cursor is pointing to the end of page/node then return nil.
 	if ref.count() == 0 || ref.index >= ref.count() {

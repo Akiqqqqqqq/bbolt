@@ -65,7 +65,7 @@ func mmap(db *DB, sz int) error {
 	}
 
 	// Save the original byte slice and convert to a byte array pointer.
-	db.dataref = b                                       // 保存mmap引用
+	db.dataref = b                                       // 保存mmap内存映射的引用
 	db.data = (*[maxMapSize]byte)(unsafe.Pointer(&b[0])) // 用一个byte slice来存内存数据
 	db.datasz = sz
 	return nil

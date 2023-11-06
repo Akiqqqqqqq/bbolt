@@ -29,7 +29,7 @@ const DefaultFillPercent = 0.5
 type Bucket struct {
 	*bucket
 	tx       *Tx                // the associated transaction
-	buckets  map[string]*Bucket // subbucket cache
+	buckets  map[string]*Bucket // subbucket cache   嵌套Bucket
 	page     *page              // inline page reference
 	rootNode *node              // materialized node for the root page.
 	nodes    map[pgid]*node     // node cache
@@ -43,7 +43,7 @@ type Bucket struct {
 }
 
 // bucket represents the on-file representation of a bucket.
-// This is stored as the "value" of a bucket key. If the bucket is small enough,
+// This is stored as the "value" of a bucket key. If the bucket is small enough, 这是一个bucket的value
 // then its root page can be stored inline in the "value", after the bucket
 // header. In the case of inline buckets, the "root" will be 0.
 type bucket struct {
@@ -51,9 +51,9 @@ type bucket struct {
 	sequence uint64 // monotonically incrementing, used by NextSequence()
 }
 
-// newBucket returns a new bucket associated with a transaction.
+// newBucket returns a new bucket associated with a transaction.  Bucket是Tx new出来的
 func newBucket(tx *Tx) Bucket {
-	var b = Bucket{tx: tx, FillPercent: DefaultFillPercent}
+	var b = Bucket{tx: tx, FillPercent: DefaultFillPercent} // 简简单单new了一个结构体出来
 	if tx.writable {
 		b.buckets = make(map[string]*Bucket)
 		b.nodes = make(map[pgid]*node)
@@ -90,7 +90,7 @@ func (b *Bucket) Cursor() *Cursor {
 	}
 }
 
-// Bucket retrieves a nested bucket by name.
+// Bucket retrieves a nested bucket by name.   取回一个指定的嵌套的bucket
 // Returns nil if the bucket does not exist.
 // The bucket instance is only valid for the lifetime of the transaction.
 func (b *Bucket) Bucket(name []byte) *Bucket {
@@ -153,7 +153,7 @@ func (b *Bucket) openBucket(value []byte) *Bucket {
 // CreateBucket creates a new bucket at the given key and returns the new bucket.
 // Returns an error if the key already exists, if the bucket name is blank, or if the bucket name is too long.
 // The bucket instance is only valid for the lifetime of the transaction.
-func (b *Bucket) CreateBucket(key []byte) (*Bucket, error) {
+func (b *Bucket) CreateBucket(key []byte) (*Bucket, error) { // b = tx.root
 	if b.tx.db == nil {
 		return nil, ErrTxClosed
 	} else if !b.tx.writable {
@@ -164,27 +164,27 @@ func (b *Bucket) CreateBucket(key []byte) (*Bucket, error) {
 
 	// Move cursor to correct position.
 	c := b.Cursor()
-	k, _, flags := c.seek(key)
+	k, _, flags := c.seek(key) // nil, nil, 0
 
 	// Return an error if there is an existing key.
 	if bytes.Equal(key, k) {
 		if (flags & bucketLeafFlag) != 0 {
-			return nil, ErrBucketExists
+			return nil, ErrBucketExists // bucket已存在
 		}
 		return nil, ErrIncompatibleValue
 	}
 
-	// Create empty, inline bucket.
+	// Create empty, inline bucket.  新建一个内联bucket对象
 	var bucket = Bucket{
 		bucket:      &bucket{},
 		rootNode:    &node{isLeaf: true},
 		FillPercent: DefaultFillPercent,
 	}
-	var value = bucket.write()
+	var value = bucket.write() // 1. 使用bucket计算得到value，是一个[]byte指针
 
 	// Insert into node.
 	key = cloneBytes(key)
-	c.node().put(key, key, value, 0, bucketLeafFlag)
+	c.node().put(key, key, value, 0, bucketLeafFlag) // 2. 在node处写入value的值
 
 	// Since subbuckets are not allowed on inline buckets, we need to
 	// dereference the inline page, if it exists. This will cause the bucket
@@ -271,7 +271,7 @@ func (b *Bucket) Get(key []byte) []byte {
 	return v
 }
 
-// Put sets the value for a key in the bucket.
+// Put sets the value for a key in the bucket. 写boltdb
 // If the key exist then its previous value will be overwritten.
 // Supplied value must remain valid for the life of the transaction.
 // Returns an error if the bucket was created from a read-only transaction, if the key is blank, if the key is too large, or if the value is too large.
@@ -299,7 +299,7 @@ func (b *Bucket) Put(key []byte, value []byte) error {
 
 	// Insert into node.
 	key = cloneBytes(key)
-	c.node().put(key, key, value, 0, 0)
+	c.node().put(key, key, value, 0, 0) // 最后都是调用node.put()
 
 	return nil
 }
@@ -630,14 +630,14 @@ func (b *Bucket) maxInlineBucketSize() uintptr {
 func (b *Bucket) write() []byte {
 	// Allocate the appropriate size.
 	var n = b.rootNode
-	var value = make([]byte, bucketHeaderSize+n.size())
+	var value = make([]byte, bucketHeaderSize+n.size()) // 分配这个inline bucket的空间（bucketHeaderSize + n.size()），用value指向它 n.size = pageHeaderSize + (eleSize)
 
 	// Write a bucket header.
-	var bucket = (*bucket)(unsafe.Pointer(&value[0]))
-	*bucket = *b.bucket
+	var bucket = (*bucket)(unsafe.Pointer(&value[0])) // 设置指针
+	*bucket = *b.bucket                               // 拷贝内容
 
 	// Convert byte slice to a fake page and write the root node.
-	var p = (*page)(unsafe.Pointer(&value[bucketHeaderSize]))
+	var p = (*page)(unsafe.Pointer(&value[bucketHeaderSize])) // 在 value + bucketHeaderSize 处分配一个page指针
 	n.write(p)
 
 	return value
@@ -658,12 +658,12 @@ func (b *Bucket) node(pgId pgid, parent *node) *node {
 	_assert(b.nodes != nil, "nodes map expected")
 
 	// Retrieve node if it's already been created.
-	if n := b.nodes[pgId]; n != nil {
+	if n := b.nodes[pgId]; n != nil { // 获取pgid的node
 		return n
 	}
 
 	// Otherwise create a node and cache it.
-	n := &node{bucket: b, parent: parent}
+	n := &node{bucket: b, parent: parent} // 创建新node
 	if parent == nil {
 		b.rootNode = n
 	} else {

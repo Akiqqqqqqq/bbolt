@@ -21,9 +21,9 @@ type pidSet map[pgid]struct{}
 // It also tracks pages that have been freed but are still in use by open transactions.
 type freelist struct {
 	freelistType   FreelistType                // freelist type
-	ids            []pgid                      // all free and available free page ids.
+	ids            []pgid                      // all free and available free page ids.  所有空闲页 page id
 	allocs         map[pgid]txid               // mapping of txid that allocated a pgid.
-	pending        map[txid]*txPending         // mapping of soon-to-be free page ids by tx.
+	pending        map[txid]*txPending         // mapping of soon-to-be free page ids by tx. 即将释放的页的page id
 	cache          map[pgid]struct{}           // fast lookup of all free and pending page ids.
 	freemaps       map[uint64]pidSet           // key is the size of continuous pages(span), value is a set which contains the starting pgids of same size
 	forwardMap     map[pgid]uint64             // key is start pgid, value is its span size
@@ -40,13 +40,13 @@ func newFreelist(freelistType FreelistType) *freelist {
 	f := &freelist{
 		freelistType: freelistType,
 		allocs:       make(map[pgid]txid),
-		pending:      make(map[txid]*txPending),
+		pending:      make(map[txid]*txPending), // mapping of soon-to-be free page ids by tx.
 		cache:        make(map[pgid]struct{}),
-		freemaps:     make(map[uint64]pidSet),
-		forwardMap:   make(map[pgid]uint64),
-		backwardMap:  make(map[pgid]uint64),
+		freemaps:     make(map[uint64]pidSet), // key是空闲块的连续页数量，value是所有起始页id的集合
+		forwardMap:   make(map[pgid]uint64),   // key是空闲块的起始页id, value是空闲块的连续页数量
+		backwardMap:  make(map[pgid]uint64),   // key是空闲块的末尾页id, value是空闲块的连续页数量
 	}
-
+	// default type is array
 	if freelistType == FreelistMapType { // 这里所有函数围绕f.ids展开
 		f.allocate = f.hashmapAllocate
 		f.free_count = f.hashmapFreeCount
@@ -268,7 +268,7 @@ func (f *freelist) read(p *page) {
 	}
 	// If the page.count is at the max uint16 value (64k) then it's considered
 	// an overflow and the size of the freelist is stored as the first element.
-	var idx, count = 0, int(p.count)
+	var idx, count = 0, int(p.count) // leaf node数量
 	if count == 0xFFFF {
 		idx = 1
 		c := *(*pgid)(unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p)))
@@ -280,7 +280,7 @@ func (f *freelist) read(p *page) {
 
 	// Copy the list of page ids from the freelist.
 	if count == 0 {
-		f.ids = nil
+		f.ids = nil // 第一次进来
 	} else {
 		var ids []pgid
 		data := unsafeIndex(unsafe.Pointer(p), unsafe.Sizeof(*p), unsafe.Sizeof(ids[0]), idx) // p + sizeof(p) + sizeof(id)*idx

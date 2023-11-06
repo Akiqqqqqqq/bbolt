@@ -14,20 +14,20 @@ import (
 // txid represents the internal transaction identifier.
 type txid uint64
 
-// Tx represents a read-only or read/write transaction on the database.
+// Tx represents a read-only or read/write transaction on the database. 代表只读/读写事务
 // Read-only transactions can be used for retrieving values for keys and creating cursors.
 // Read/write transactions can create and remove buckets and create and remove keys.
 //
-// IMPORTANT: You must commit or rollback transactions when you are done with
+// IMPORTANT: You must commit or rollback transactions when you are done with  必须commit或者rollback
 // them. Pages can not be reclaimed by the writer until no more transactions
-// are using them. A long running read transaction can cause the database to
+// are using them. A long running read transaction can cause the database to  // 长只读事务会导致db增长？
 // quickly grow.
 type Tx struct {
 	writable       bool
 	managed        bool
-	db             *DB
+	db             *DB // db指针
 	meta           *meta
-	root           Bucket
+	root           Bucket // Bucket指针(back)
 	pages          map[pgid]*page
 	stats          TxStats
 	commitHandlers []func()
@@ -44,21 +44,21 @@ type Tx struct {
 // init initializes the transaction.
 func (tx *Tx) init(db *DB) {
 	tx.db = db
-	tx.pages = nil
+	tx.pages = nil // tx也有pages引用
 
 	// Copy the meta page since it can be changed by the writer.
 	tx.meta = &meta{}
-	db.meta().copy(tx.meta)
+	db.meta().copy(tx.meta) // 拷贝meta页
 
 	// Copy over the root bucket.
-	tx.root = newBucket(tx)
-	tx.root.bucket = &bucket{}
-	*tx.root.bucket = tx.meta.root
+	tx.root = newBucket(tx)        // 赋值root Bucket; tx的操作对象是bucket
+	tx.root.bucket = &bucket{}     // 新建一个bucket指针
+	*tx.root.bucket = tx.meta.root // 赋值内容（相当于copy了meta.root
 
 	// Increment the transaction id and add a page cache for writable transactions.
 	if tx.writable {
-		tx.pages = make(map[pgid]*page)
-		tx.meta.txid += txid(1)
+		tx.pages = make(map[pgid]*page) // 增加一个page cache
+		tx.meta.txid += txid(1)         // txid自增
 	}
 }
 
@@ -105,8 +105,8 @@ func (tx *Tx) Bucket(name []byte) *Bucket {
 // CreateBucket creates a new bucket.
 // Returns an error if the bucket already exists, if the bucket name is blank, or if the bucket name is too long.
 // The bucket instance is only valid for the lifetime of the transaction.
-func (tx *Tx) CreateBucket(name []byte) (*Bucket, error) {
-	return tx.root.CreateBucket(name)
+func (tx *Tx) CreateBucket(name []byte) (*Bucket, error) { // tx创建bucket
+	return tx.root.CreateBucket(name) // 使用tx的root这个bucket（*tx.root.bucket = tx.meta.root，id=3）
 }
 
 // CreateBucketIfNotExists creates a new bucket if it doesn't already exist.
@@ -449,7 +449,7 @@ func (tx *Tx) write() error {
 			}
 			buf := unsafeByteSlice(unsafe.Pointer(p), written, 0, int(sz))
 
-			if _, err := tx.db.ops.writeAt(buf, offset); err != nil {
+			if _, err := tx.db.ops.writeAt(buf, offset); err != nil { // 系统调用？
 				return err
 			}
 
@@ -470,7 +470,7 @@ func (tx *Tx) write() error {
 
 	// Ignore file sync if flag is set on DB.
 	if !tx.db.NoSync || IgnoreNoSync {
-		if err := fdatasync(tx.db); err != nil {
+		if err := fdatasync(tx.db); err != nil { // 系统调用？
 			return err
 		}
 	}
@@ -530,7 +530,7 @@ func (tx *Tx) page(id pgid) *page {
 	}
 
 	// Otherwise return directly from the mmap.
-	p := tx.db.page(id)
+	p := tx.db.page(id) // 直接根据id从内存拿page对象
 	p.fastCheck(id)
 	return p
 }

@@ -17,8 +17,8 @@ const leafPageElementSize = unsafe.Sizeof(leafPageElement{})
 const (
 	branchPageFlag   = 0x01 // 存放 branch node 的数据
 	leafPageFlag     = 0x02 // 存放 leaf node 的数据
-	metaPageFlag     = 0x04 // 存放 db 的 meta data
-	freelistPageFlag = 0x10 // 存放 db 的空闲 page
+	metaPageFlag     = 0x04 // 存放 db 的 meta data   0100
+	freelistPageFlag = 0x10 // 存放 db 的空闲 page    1 0000
 )
 
 const (
@@ -30,7 +30,7 @@ type pgid uint64
 type page struct {
 	id       pgid   // page id (8 bytes)
 	flags    uint16 // 区分不同类型的 page (2 bytes)
-	count    uint16 // leaf node：数据个数；branch node：子结点数量 (2 bytes)
+	count    uint16 // 不同类型page, count含义不同: 分支节点页count代表子节点数量；叶子节点页count代表本节点存储的kv对数量；空闲列表页count代表空闲页的数量。
 	overflow uint32 // 若单个 page 大小不够，会分配多个 page; overflow字段代表Page Body往后延伸占用了多少个物理页，也就是该逻辑page除本物理页还占用了几个连续物理页。 (4 bytes)
 } // 上述4个字段一共16 bytes， pageSize为4096 bytes，所以其实有很多的空闲区域
 
@@ -50,7 +50,7 @@ func (p *page) typ() string {
 
 // meta returns a pointer to the metadata section of the page.
 func (p *page) meta() *meta {
-	return (*meta)(unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p))) // meta部分紧接在page结构体后面?
+	return (*meta)(unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p))) // meta部分紧接在page结构体后面? 对，page结构体不大
 }
 
 func (p *page) fastCheck(id pgid) {
@@ -74,9 +74,9 @@ func (p *page) leafPageElements() []leafPageElement {
 	if p.count == 0 {
 		return nil
 	}
-	var elems []leafPageElement
-	data := unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p))
-	unsafeSlice(unsafe.Pointer(&elems), data, int(p.count))
+	var elems []leafPageElement                             // {flags uint32 ,pos   uint32 ,ksize uint32 ,vsize uint32}
+	data := unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p)) // data在root这个page尾巴上
+	unsafeSlice(unsafe.Pointer(&elems), data, int(p.count)) // 修改elems，使它指向data，并且长度为int(p.count)
 	return elems
 }
 
@@ -110,10 +110,10 @@ func (s pages) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s pages) Less(i, j int) bool { return s[i].id < s[j].id }
 
 // branchPageElement represents a node on a branch page.
-type branchPageElement struct {
+type branchPageElement struct { // 树节点数组元素
 	pos   uint32
 	ksize uint32
-	pgid  pgid
+	pgid  pgid // 所在页的page id
 }
 
 // key returns a byte slice of the node key.
@@ -122,7 +122,7 @@ func (n *branchPageElement) key() []byte {
 }
 
 // leafPageElement represents a node on a leaf page.
-type leafPageElement struct {
+type leafPageElement struct { // 叶子数组元素
 	flags uint32
 	pos   uint32
 	ksize uint32
