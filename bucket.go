@@ -43,7 +43,7 @@ type Bucket struct {
 }
 
 // bucket represents the on-file representation of a bucket.
-// This is stored as the "value" of a bucket key. If the bucket is small enough, 这是一个bucket的value
+// This is stored as the "value" of a bucket key. If the bucket is small enough, 这是一个bucket的key的内容
 // then its root page can be stored inline in the "value", after the bucket
 // header. In the case of inline buckets, the "root" will be 0.
 type bucket struct {
@@ -55,7 +55,7 @@ type bucket struct {
 func newBucket(tx *Tx) Bucket {
 	var b = Bucket{tx: tx, FillPercent: DefaultFillPercent} // 简简单单new了一个结构体出来
 	if tx.writable {
-		b.buckets = make(map[string]*Bucket)
+		b.buckets = make(map[string]*Bucket) // 嵌套bucket
 		b.nodes = make(map[pgid]*node)
 	}
 	return b
@@ -164,7 +164,7 @@ func (b *Bucket) CreateBucket(key []byte) (*Bucket, error) { // b = tx.root
 
 	// Move cursor to correct position.
 	c := b.Cursor()
-	k, _, flags := c.seek(key) // nil, nil, 0
+	k, _, flags := c.seek(key) // nil, nil, 0表示啥也没找到
 
 	// Return an error if there is an existing key.
 	if bytes.Equal(key, k) {
@@ -174,13 +174,13 @@ func (b *Bucket) CreateBucket(key []byte) (*Bucket, error) { // b = tx.root
 		return nil, ErrIncompatibleValue
 	}
 
-	// Create empty, inline bucket.  新建一个内联bucket对象
+	// Create empty, inline bucket.  新建一个内联bucket对象; 相当于这是一个value了，key是bucketName
 	var bucket = Bucket{
 		bucket:      &bucket{},
 		rootNode:    &node{isLeaf: true},
 		FillPercent: DefaultFillPercent,
 	}
-	var value = bucket.write() // 1. 使用bucket计算得到value，是一个[]byte指针
+	var value = bucket.write() // 1. 使用bucket计算得到value，是一个指针
 
 	// Insert into node.
 	key = cloneBytes(key)
@@ -633,14 +633,14 @@ func (b *Bucket) write() []byte {
 	var value = make([]byte, bucketHeaderSize+n.size()) // 分配这个inline bucket的空间（bucketHeaderSize + n.size()），用value指向它 n.size = pageHeaderSize + (eleSize)
 
 	// Write a bucket header.
-	var bucket = (*bucket)(unsafe.Pointer(&value[0])) // 设置指针
-	*bucket = *b.bucket                               // 拷贝内容
+	var bucket = (*bucket)(unsafe.Pointer(&value[0])) // 设置指针，指向value[0]
+	*bucket = *b.bucket                               // 拷贝内容到value[0]
 
 	// Convert byte slice to a fake page and write the root node.
-	var p = (*page)(unsafe.Pointer(&value[bucketHeaderSize])) // 在 value + bucketHeaderSize 处分配一个page指针
-	n.write(p)
+	var p = (*page)(unsafe.Pointer(&value[bucketHeaderSize])) // 在 value[bucketHeaderSize] 处分配一个page指针
+	n.write(p)                                                // rootNode转page,写到bucketHeaderSize后面（看上去node和page等价）
 
-	return value
+	return value // value:  | bucketHeaderSize | pageHeaderSize | elemSize * n |
 }
 
 // rebalance attempts to balance all nodes.
@@ -677,7 +677,7 @@ func (b *Bucket) node(pgId pgid, parent *node) *node {
 	}
 
 	// Read the page into the node and cache it.
-	n.read(p)
+	n.read(p) // page转node
 	b.nodes[pgId] = n
 
 	// Update statistics.
@@ -714,12 +714,12 @@ func (b *Bucket) dereference() {
 	}
 }
 
-// pageNode returns the in-memory node, if it exists.
+// pageNode returns the in-memory node, if it exists.  返回内存里面的node，如果没有，则返回底层page对象
 // Otherwise returns the underlying page.
 func (b *Bucket) pageNode(id pgid) (*page, *node) {
 	// Inline buckets have a fake page embedded in their value so treat them
 	// differently. We'll return the rootNode (if available) or the fake page.
-	if b.root == 0 {
+	if b.root == 0 { // 如果是内联bucket
 		if id != 0 {
 			panic(fmt.Sprintf("inline bucket non-zero page access(2): %d != 0", id))
 		}
@@ -731,13 +731,13 @@ func (b *Bucket) pageNode(id pgid) (*page, *node) {
 
 	// Check the node cache for non-inline buckets.
 	if b.nodes != nil {
-		if n := b.nodes[id]; n != nil {
+		if n := b.nodes[id]; n != nil { // 检查node cache
 			return nil, n
 		}
 	}
 
 	// Finally lookup the page from the transaction if no node is materialized.
-	return b.tx.page(id), nil
+	return b.tx.page(id), nil // 返回page，没有node
 }
 
 // BucketStats records statistics about resources used by a bucket.

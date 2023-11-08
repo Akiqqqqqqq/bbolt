@@ -27,8 +27,8 @@ type Tx struct {
 	managed        bool
 	db             *DB // db指针
 	meta           *meta
-	root           Bucket // Bucket指针(back)
-	pages          map[pgid]*page
+	root           Bucket         // Bucket指针(back)
+	pages          map[pgid]*page // 脏页
 	stats          TxStats
 	commitHandlers []func()
 
@@ -53,7 +53,7 @@ func (tx *Tx) init(db *DB) {
 	// Copy over the root bucket.
 	tx.root = newBucket(tx)        // 赋值root Bucket; tx的操作对象是bucket
 	tx.root.bucket = &bucket{}     // 新建一个bucket指针
-	*tx.root.bucket = tx.meta.root // 赋值内容（相当于copy了meta.root
+	*tx.root.bucket = tx.meta.root // 赋值内容（相当于copy了meta.root = bucket{root: 3}
 
 	// Increment the transaction id and add a page cache for writable transactions.
 	if tx.writable {
@@ -522,7 +522,7 @@ func (tx *Tx) writeMeta() error {
 // If page has been written to then a temporary buffered page is returned.
 func (tx *Tx) page(id pgid) *page {
 	// Check the dirty pages first.
-	if tx.pages != nil {
+	if tx.pages != nil { // 脏页
 		if p, ok := tx.pages[id]; ok {
 			p.fastCheck(id)
 			return p
@@ -530,7 +530,7 @@ func (tx *Tx) page(id pgid) *page {
 	}
 
 	// Otherwise return directly from the mmap.
-	p := tx.db.page(id) // 直接根据id从内存拿page对象
+	p := tx.db.page(id) // 直接根据id从内存(db.data)拿page对象
 	p.fastCheck(id)
 	return p
 }

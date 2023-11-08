@@ -18,7 +18,7 @@ import (
 // after mutating data.
 type Cursor struct {
 	bucket *Bucket
-	stack  []elemRef
+	stack  []elemRef // Cursor.stack 中保存了查找对应 key 的路径, 栈顶保存了 key 所在的结点和位置
 }
 
 // Bucket returns the bucket that this cursor was created from.
@@ -156,7 +156,7 @@ func (c *Cursor) Delete() error {
 func (c *Cursor) seek(seek []byte) (key []byte, value []byte, flags uint32) {
 	// Start from root page/node and traverse to correct page.
 	c.stack = c.stack[:0]
-	c.search(seek, c.bucket.root) // c.bucket.root=3
+	c.search(seek, c.bucket.root) // c.bucket.root = 3; search只是拿到seek的index
 
 	// If this is a bucket then return a nil value.
 	return c.keyValue()
@@ -269,24 +269,24 @@ func (c *Cursor) prev() (key []byte, value []byte, flags uint32) {
 
 // search recursively performs a binary search against a given page/node until it finds a given key.
 func (c *Cursor) search(key []byte, pgId pgid) {
-	p, n := c.bucket.pageNode(pgId) // 拿到leafPage和node(nil)
-	if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 {
+	p, n := c.bucket.pageNode(pgId)                               // 拿到leafPage和node(nil)
+	if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 { // 必须是branchPage 或 leafPage
 		panic(fmt.Sprintf("invalid page type: %d: %x", p.id, p.flags))
 	}
 	e := elemRef{page: p, node: n}
-	c.stack = append(c.stack, e)
+	c.stack = append(c.stack, e) // 到栈顶（往后递归会一直append到栈顶）最后一个e就是那个seek的e，e.p就是seek的page，e.n就是seek的node
 
 	// If we're on a leaf page/node then find the specific node.
-	if e.isLeaf() {
+	if e.isLeaf() { // 如果是一个叶子 页/node，那就执行一个非递归的简单二分搜索（因为已经到叶子了，不能再往下走了）这里是递归终止的地方
 		c.nsearch(key)
 		return
 	}
 
-	if n != nil {
-		c.searchNode(key, n)
+	if n != nil { // 有node就搜node
+		c.searchNode(key, n) // 递归搜索
 		return
-	}
-	c.searchPage(key, p)
+	} // 没node就搜page
+	c.searchPage(key, p) // 递归搜索
 }
 
 func (c *Cursor) searchNode(key []byte, n *node) {
@@ -306,7 +306,7 @@ func (c *Cursor) searchNode(key []byte, n *node) {
 	c.stack[len(c.stack)-1].index = index
 
 	// Recursively search to the next page.
-	c.search(key, n.inodes[index].pgid)
+	c.search(key, n.inodes[index].pgid) // 递归
 }
 
 func (c *Cursor) searchPage(key []byte, p *page) {
@@ -329,7 +329,7 @@ func (c *Cursor) searchPage(key []byte, p *page) {
 	c.stack[len(c.stack)-1].index = index
 
 	// Recursively search to the next page.
-	c.search(key, inodes[index].pgid)
+	c.search(key, inodes[index].pgid) // 递归，pgid从root=3 变成了branchPageElements[index].pgid
 }
 
 // nsearch searches the leaf node on the top of the stack for a key.
@@ -338,7 +338,7 @@ func (c *Cursor) nsearch(key []byte) {
 	p, n := e.page, e.node        // node是nil
 
 	// If we have a node then search its inodes.
-	if n != nil {
+	if n != nil { // 有node就搜node
 		index := sort.Search(len(n.inodes), func(i int) bool {
 			return bytes.Compare(n.inodes[i].key, key) != -1
 		})
@@ -346,7 +346,7 @@ func (c *Cursor) nsearch(key []byte) {
 		return
 	}
 
-	// If we have a page then search its leaf elements.
+	// If we have a page then search its leaf elements. // 没node就搜page
 	inodes := p.leafPageElements() // 取回在p后面的一个列表的leafPageElement
 	index := sort.Search(int(p.count), func(i int) bool {
 		return bytes.Compare(inodes[i].key(), key) != -1 // 搜索这个key
@@ -355,21 +355,21 @@ func (c *Cursor) nsearch(key []byte) {
 }
 
 // keyValue returns the key and value of the current leaf element.
-func (c *Cursor) keyValue() ([]byte, []byte, uint32) {
-	ref := &c.stack[len(c.stack)-1] // 取出elemRef
+func (c *Cursor) keyValue() ([]byte, []byte, uint32) { // 如果啥也没找到，就返回 nil, nil, 0
+	ref := &c.stack[len(c.stack)-1] // 取出elemRef，也就是seek
 
 	// If the cursor is pointing to the end of page/node then return nil.
-	if ref.count() == 0 || ref.index >= ref.count() {
+	if ref.count() == 0 || ref.index >= ref.count() { // index是seek的索引，如果index大于kv数量，则是搜到尾巴了
 		return nil, nil, 0
 	}
 
 	// Retrieve value from node.
-	if ref.node != nil {
+	if ref.node != nil { // 如果node不为空，则从node拿
 		inode := &ref.node.inodes[ref.index]
 		return inode.key, inode.value, inode.flags
 	}
 
-	// Or retrieve value from page.
+	// Or retrieve value from page. 如果node为空，则从page拿
 	elem := ref.page.leafPageElement(uint16(ref.index))
 	return elem.key(), elem.value(), elem.flags
 }
@@ -384,9 +384,9 @@ func (c *Cursor) node() *node {
 	}
 
 	// Start from root and traverse down the hierarchy.
-	var n = c.stack[0].node
+	var n = c.stack[0].node // 从根(root=3)开始
 	if n == nil {
-		n = c.bucket.node(c.stack[0].page.id, nil)
+		n = c.bucket.node(c.stack[0].page.id, nil) // 根都没有，创建一个node
 	}
 	for _, ref := range c.stack[:len(c.stack)-1] {
 		_assert(!n.isLeaf, "expected branch node")
@@ -408,7 +408,7 @@ func (r *elemRef) isLeaf() bool {
 	if r.node != nil {
 		return r.node.isLeaf
 	}
-	return (r.page.flags & leafPageFlag) != 0
+	return (r.page.flags & leafPageFlag) != 0 // 如果flags==leafPageFlag，则返回true
 }
 
 // count returns the number of inodes or page elements.
@@ -416,5 +416,5 @@ func (r *elemRef) count() int {
 	if r.node != nil {
 		return len(r.node.inodes)
 	}
-	return int(r.page.count)
+	return int(r.page.count) // 叶子节点页count代表本节点存储的kv对数量
 }

@@ -10,14 +10,14 @@ import (
 // node represents an in-memory, deserialized page.
 type node struct {
 	bucket     *Bucket // 指针
-	isLeaf     bool
+	isLeaf     bool    // 区分 branch node 和 leaf node
 	unbalanced bool
 	spilled    bool
-	key        []byte
+	key        []byte // 该 node 的起始 key
 	pgid       pgid
-	parent     *node
-	children   nodes
-	inodes     inodes
+	parent     *node  // 父节点
+	children   nodes  // 子结点
+	inodes     inodes // 存放 node 的数据
 }
 
 // root returns the top-level node this node is attached to.
@@ -25,7 +25,7 @@ func (n *node) root() *node {
 	if n.parent == nil {
 		return n
 	}
-	return n.parent.root()
+	return n.parent.root() // 递归回溯找到root
 }
 
 // minKeys returns the minimum number of inodes this node should have.
@@ -38,7 +38,7 @@ func (n *node) minKeys() int {
 
 // size returns the size of the node after serialization.
 func (n *node) size() int {
-	sz, elsz := pageHeaderSize, n.pageElementSize()
+	sz, elsz := pageHeaderSize, n.pageElementSize() // pageHeader, element
 	for i := 0; i < len(n.inodes); i++ {
 		item := &n.inodes[i]
 		sz += elsz + uintptr(len(item.key)) + uintptr(len(item.value))
@@ -74,7 +74,7 @@ func (n *node) childAt(index int) *node {
 	if n.isLeaf {
 		panic(fmt.Sprintf("invalid childAt(%d) on a leaf node", index))
 	}
-	return n.bucket.node(n.inodes[index].pgid, n)
+	return n.bucket.node(n.inodes[index].pgid, n) // 没看懂
 }
 
 // childIndex returns the index of a given child node.
@@ -112,7 +112,7 @@ func (n *node) prevSibling() *node {
 	return n.parent.childAt(index - 1)
 }
 
-// put inserts a key/value.
+// put inserts a key/value.  写入node.inodes
 func (n *node) put(oldKey, newKey, value []byte, pgId pgid, flags uint32) {
 	if pgId >= n.bucket.tx.meta.pgid {
 		panic(fmt.Sprintf("pgId (%d) above high water mark (%d)", pgId, n.bucket.tx.meta.pgid))
@@ -127,7 +127,7 @@ func (n *node) put(oldKey, newKey, value []byte, pgId pgid, flags uint32) {
 
 	// Add capacity and shift nodes if we don't have an exact match and need to insert.
 	exact := (len(n.inodes) > 0 && index < len(n.inodes) && bytes.Equal(n.inodes[index].key, oldKey))
-	if !exact {
+	if !exact { // 刚好找到了一个和oldKey一样的，所以整体往后挪一下？
 		n.inodes = append(n.inodes, inode{})
 		copy(n.inodes[index+1:], n.inodes[index:])
 	}
@@ -157,7 +157,8 @@ func (n *node) del(key []byte) {
 	n.unbalanced = true
 }
 
-// read initializes the node from a page.
+// node 和 page 的相互转换通过 node.read(p *page) 和 node.write(p *page)
+// read initializes the node from a page. page --> node 前提是有一个已经建立好的page
 func (n *node) read(p *page) {
 	n.pgid = p.id
 	n.isLeaf = ((p.flags & leafPageFlag) != 0)
@@ -187,9 +188,10 @@ func (n *node) read(p *page) {
 	}
 }
 
+// node 和 page 的相互转换通过 node.read(p *page) 和 node.write(p *page)
 // write writes the items onto one or more pages.
 // The page should have p.id (might be 0 for meta or bucket-inline page) and p.overflow set
-// and the rest should be zeroed.
+// and the rest should be zeroed.    node ---> page 前提是有一个已经建立的node
 func (n *node) write(p *page) {
 	_assert(p.count == 0 && p.flags == 0, "node cannot be written into a not empty page")
 
@@ -213,7 +215,7 @@ func (n *node) write(p *page) {
 	// Loop over each item and write it to the page.
 	// off tracks the offset into p of the start of the next data.
 	off := unsafe.Sizeof(*p) + n.pageElementSize()*uintptr(len(n.inodes))
-	for i, item := range n.inodes {
+	for i, item := range n.inodes { // 遍历node的所有inode
 		_assert(len(item.key) > 0, "write: zero-length inode key")
 
 		// Create a slice to write into of needed size and advance
@@ -223,13 +225,13 @@ func (n *node) write(p *page) {
 		off += uintptr(sz)
 
 		// Write the page element.
-		if n.isLeaf {
+		if n.isLeaf { // node是叶子
 			elem := p.leafPageElement(uint16(i))
 			elem.pos = uint32(uintptr(unsafe.Pointer(&b[0])) - uintptr(unsafe.Pointer(elem)))
 			elem.flags = item.flags
 			elem.ksize = uint32(len(item.key))
 			elem.vsize = uint32(len(item.value))
-		} else {
+		} else { // node是分支
 			elem := p.branchPageElement(uint16(i))
 			elem.pos = uint32(uintptr(unsafe.Pointer(&b[0])) - uintptr(unsafe.Pointer(elem)))
 			elem.ksize = uint32(len(item.key))
@@ -601,8 +603,8 @@ func (s nodes) Less(i, j int) bool {
 // It can be used to point to elements in a page or point
 // to an element which hasn't been added to a page yet.
 type inode struct {
-	flags uint32
-	pgid  pgid
+	flags uint32 // 用于 leaf node，区分是正常 value 还是 subbucket
+	pgid  pgid   // 用于 branch node, 子节点的 page id
 	key   []byte
 	value []byte
 }
