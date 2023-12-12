@@ -50,7 +50,7 @@ func (tx *Tx) init(db *DB) {
 	tx.meta = &meta{}
 	db.meta().copy(tx.meta) // 拷贝meta页
 
-	// Copy over the root bucket.
+	// Copy over the root bucket. 总结，root是一个新Bucket，root的bucket是meta.root，也就是指向leafPage
 	tx.root = newBucket(tx)        // 赋值root Bucket; tx的操作对象是bucket
 	tx.root.bucket = &bucket{}     // 新建一个bucket指针
 	*tx.root.bucket = tx.meta.root // 赋值内容（相当于copy了meta.root = bucket{root: 3}
@@ -106,7 +106,7 @@ func (tx *Tx) Bucket(name []byte) *Bucket {
 // Returns an error if the bucket already exists, if the bucket name is blank, or if the bucket name is too long.
 // The bucket instance is only valid for the lifetime of the transaction.
 func (tx *Tx) CreateBucket(name []byte) (*Bucket, error) { // tx创建bucket
-	return tx.root.CreateBucket(name) // 使用tx的root这个bucket（*tx.root.bucket = tx.meta.root，id=3）
+	return tx.root.CreateBucket(name) // 使用tx的root这个Bucket（*tx.root.bucket = tx.meta.root，id=3）
 }
 
 // CreateBucketIfNotExists creates a new bucket if it doesn't already exist.
@@ -522,7 +522,7 @@ func (tx *Tx) writeMeta() error {
 // If page has been written to then a temporary buffered page is returned.
 func (tx *Tx) page(id pgid) *page {
 	// Check the dirty pages first.
-	if tx.pages != nil { // 脏页
+	if tx.pages != nil { // 脏页；读写事务一开始是有pages的，但是为空
 		if p, ok := tx.pages[id]; ok {
 			p.fastCheck(id)
 			return p
@@ -530,7 +530,7 @@ func (tx *Tx) page(id pgid) *page {
 	}
 
 	// Otherwise return directly from the mmap.
-	p := tx.db.page(id) // 直接根据id从内存(db.data)拿page对象
+	p := tx.db.page(id) // 直接根据id从内存(db.data)拿page对象，拿到id=3（leafPage）那个page
 	p.fastCheck(id)
 	return p
 }

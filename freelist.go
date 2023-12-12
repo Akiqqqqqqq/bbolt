@@ -261,7 +261,7 @@ func (f *freelist) freed(pgId pgid) bool {
 	return ok
 }
 
-// read initializes the freelist from a freelist page.
+// read initializes the freelist from a freelist page. read方法从freelist page来初始化一个freelist
 func (f *freelist) read(p *page) {
 	if (p.flags & freelistPageFlag) == 0 {
 		panic(fmt.Sprintf("invalid freelist page: %d, page type is %s", p.id, p.typ()))
@@ -269,7 +269,7 @@ func (f *freelist) read(p *page) {
 	// If the page.count is at the max uint16 value (64k) then it's considered
 	// an overflow and the size of the freelist is stored as the first element.
 	var idx, count = 0, int(p.count) // leaf node数量
-	if count == 0xFFFF {
+	if count == 0xFFFF {             // 最大值
 		idx = 1
 		c := *(*pgid)(unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p)))
 		count = int(c)

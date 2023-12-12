@@ -127,12 +127,12 @@ func (n *node) put(oldKey, newKey, value []byte, pgId pgid, flags uint32) {
 
 	// Add capacity and shift nodes if we don't have an exact match and need to insert.
 	exact := (len(n.inodes) > 0 && index < len(n.inodes) && bytes.Equal(n.inodes[index].key, oldKey))
-	if !exact { // 刚好找到了一个和oldKey一样的，所以整体往后挪一下？
+	if !exact {
 		n.inodes = append(n.inodes, inode{})
-		copy(n.inodes[index+1:], n.inodes[index:])
+		copy(n.inodes[index+1:], n.inodes[index:]) // 腾出n.inodes[index]这个空
 	}
 
-	inode := &n.inodes[index]
+	inode := &n.inodes[index] // 插入
 	inode.flags = flags
 	inode.key = newKey
 	inode.value = value
@@ -221,7 +221,7 @@ func (n *node) write(p *page) {
 		// Create a slice to write into of needed size and advance
 		// byte pointer for next iteration.
 		sz := len(item.key) + len(item.value)
-		b := unsafeByteSlice(unsafe.Pointer(p), off, 0, sz)
+		b := unsafeByteSlice(unsafe.Pointer(p), off, 0, sz) // 从p处“开辟”一段内存
 		off += uintptr(sz)
 
 		// Write the page element.

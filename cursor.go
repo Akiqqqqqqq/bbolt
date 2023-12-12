@@ -155,8 +155,8 @@ func (c *Cursor) Delete() error {
 // If the key does not exist then the next key is used.
 func (c *Cursor) seek(seek []byte) (key []byte, value []byte, flags uint32) {
 	// Start from root page/node and traverse to correct page.
-	c.stack = c.stack[:0]
-	c.search(seek, c.bucket.root) // c.bucket.root = 3; search只是拿到seek的index
+	c.stack = c.stack[:0]         // 清空stack
+	c.search(seek, c.bucket.root) // c.bucket.root = 3; search只是拿到seek的index；c.bucket.root其实是c.Bucket.bucket.root
 
 	// If this is a bucket then return a nil value.
 	return c.keyValue()
@@ -268,13 +268,13 @@ func (c *Cursor) prev() (key []byte, value []byte, flags uint32) {
 }
 
 // search recursively performs a binary search against a given page/node until it finds a given key.
-func (c *Cursor) search(key []byte, pgId pgid) {
+func (c *Cursor) search(key []byte, pgId pgid) { // (seek, c.Bucket.bucket.root(pgid=3,就是指向leafPage))
 	p, n := c.bucket.pageNode(pgId)                               // 拿到leafPage和node(nil)
 	if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 { // 必须是branchPage 或 leafPage
 		panic(fmt.Sprintf("invalid page type: %d: %x", p.id, p.flags))
 	}
 	e := elemRef{page: p, node: n}
-	c.stack = append(c.stack, e) // 到栈顶（往后递归会一直append到栈顶）最后一个e就是那个seek的e，e.p就是seek的page，e.n就是seek的node
+	c.stack = append(c.stack, e) // 压到栈顶（往后递归会一直append到栈顶）最后一个e就是那个seek的e，e.p就是seek的page，e.n就是seek的node
 
 	// If we're on a leaf page/node then find the specific node.
 	if e.isLeaf() { // 如果是一个叶子 页/node，那就执行一个非递归的简单二分搜索（因为已经到叶子了，不能再往下走了）这里是递归终止的地方
@@ -386,9 +386,9 @@ func (c *Cursor) node() *node {
 	// Start from root and traverse down the hierarchy.
 	var n = c.stack[0].node // 从根(root=3)开始
 	if n == nil {
-		n = c.bucket.node(c.stack[0].page.id, nil) // 根都没有，创建一个node
+		n = c.bucket.node(c.stack[0].page.id, nil) // 根都没有，创建一个node；比如最开始的时候
 	}
-	for _, ref := range c.stack[:len(c.stack)-1] {
+	for _, ref := range c.stack[:len(c.stack)-1] { // 从0到len(c.stack)-1遍历stack上的元素；相当于再走一遍stack上面的路径
 		_assert(!n.isLeaf, "expected branch node")
 		n = n.childAt(ref.index)
 	}

@@ -56,7 +56,7 @@ func newBucket(tx *Tx) Bucket {
 	var b = Bucket{tx: tx, FillPercent: DefaultFillPercent} // 简简单单new了一个结构体出来
 	if tx.writable {
 		b.buckets = make(map[string]*Bucket) // 嵌套bucket
-		b.nodes = make(map[pgid]*node)
+		b.nodes = make(map[pgid]*node)       // bucket下的nodes
 	}
 	return b
 }
@@ -177,7 +177,7 @@ func (b *Bucket) CreateBucket(key []byte) (*Bucket, error) { // b = tx.root
 	// Create empty, inline bucket.  新建一个内联bucket对象; 相当于这是一个value了，key是bucketName
 	var bucket = Bucket{
 		bucket:      &bucket{},
-		rootNode:    &node{isLeaf: true},
+		rootNode:    &node{isLeaf: true}, // 是叶节点
 		FillPercent: DefaultFillPercent,
 	}
 	var value = bucket.write() // 1. 使用bucket计算得到value，是一个指针
@@ -638,7 +638,7 @@ func (b *Bucket) write() []byte {
 
 	// Convert byte slice to a fake page and write the root node.
 	var p = (*page)(unsafe.Pointer(&value[bucketHeaderSize])) // 在 value[bucketHeaderSize] 处分配一个page指针
-	n.write(p)                                                // rootNode转page,写到bucketHeaderSize后面（看上去node和page等价）
+	n.write(p)                                                // rootNode转page, rootNode写到bucketHeaderSize后面（看上去node和page等价）
 
 	return value // value:  | bucketHeaderSize | pageHeaderSize | elemSize * n |
 }
@@ -730,14 +730,14 @@ func (b *Bucket) pageNode(id pgid) (*page, *node) {
 	}
 
 	// Check the node cache for non-inline buckets.
-	if b.nodes != nil {
+	if b.nodes != nil { // 读写事务的Bucket是有nodes的，但是一开始为空
 		if n := b.nodes[id]; n != nil { // 检查node cache
 			return nil, n
 		}
 	}
 
 	// Finally lookup the page from the transaction if no node is materialized.
-	return b.tx.page(id), nil // 返回page，没有node
+	return b.tx.page(id), nil // 返回leaf那个page，没有node
 }
 
 // BucketStats records statistics about resources used by a bucket.

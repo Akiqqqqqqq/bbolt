@@ -296,7 +296,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 
 	// Flush freelist when transitioning from no sync to sync so
 	// NoFreelistSync unaware boltdb can open the db later.
-	if !db.NoFreelistSync && !db.hasSyncedFreelist() { // 第一次应该不会进来
+	if !db.NoFreelistSync && !db.hasSyncedFreelist() { // 第一次应该不会进来，db.hasSyncedFreelist()为true
 		tx, err := db.Begin(true)
 		if tx != nil {
 			err = tx.Commit()
@@ -406,7 +406,7 @@ func (db *DB) getPageSizeFromSecondMeta() (int, bool, error) {
 // concurrent accesses being made to the freelist.
 func (db *DB) loadFreelist() {
 	db.freelistLoad.Do(func() {
-		db.freelist = newFreelist(db.FreelistType) // 实例化freeList成员变量,里面有很多map容器
+		db.freelist = newFreelist(db.FreelistType) // 实例化freeList成员变量, 里面有很多map容器
 		if !db.hasSyncedFreelist() {
 			// Reconstruct free list by scanning the DB.
 			db.freelist.readIDs(db.freepages())
@@ -793,7 +793,7 @@ func (db *DB) beginRWTx() (*Tx, error) {
 	// Create a transaction associated with the database.
 	t := &Tx{writable: true}
 	t.init(db)
-	db.rwtx = t    // 赋值db读写事务（单例的）
+	db.rwtx = t    // 赋值db读写事务（由于是单线程的，所以db的rwtx是单例的）
 	db.freePages() // 释放已关闭的只读事务的页缓存
 	return t, nil
 }

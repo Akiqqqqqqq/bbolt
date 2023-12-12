@@ -50,7 +50,7 @@ func (p *page) typ() string {
 
 // meta returns a pointer to the metadata section of the page.
 func (p *page) meta() *meta {
-	return (*meta)(unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p))) // meta部分紧接在page结构体后面? 对，page结构体不大
+	return (*meta)(unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p))) // meta部分紧接在page结构体后面? 对，page结构体不大,小于pageSize
 }
 
 func (p *page) fastCheck(id pgid) {
