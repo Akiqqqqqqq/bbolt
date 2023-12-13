@@ -583,7 +583,7 @@ func (b *Bucket) spill() error {
 	// Spill nodes.
 	if err := b.rootNode.spill(); err != nil {
 		return err
-	}
+	} // 刷node到脏页
 	b.rootNode = b.rootNode.root()
 
 	// Update the root node for this bucket.

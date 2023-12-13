@@ -160,7 +160,7 @@ func (tx *Tx) Commit() error {
 
 	// spill data onto dirty pages.
 	startTime = time.Now()
-	if err := tx.root.spill(); err != nil {
+	if err := tx.root.spill(); err != nil { // node数据刷到page
 		tx.rollback()
 		return err
 	}
@@ -193,7 +193,7 @@ func (tx *Tx) Commit() error {
 
 	// Write dirty pages to disk.
 	startTime = time.Now()
-	if err := tx.write(); err != nil {
+	if err := tx.write(); err != nil { // 调用writeAt和fsync系统调用来写磁盘
 		tx.rollback()
 		return err
 	}
@@ -449,7 +449,7 @@ func (tx *Tx) write() error {
 			}
 			buf := unsafeByteSlice(unsafe.Pointer(p), written, 0, int(sz))
 
-			if _, err := tx.db.ops.writeAt(buf, offset); err != nil { // 系统调用？
+			if _, err := tx.db.ops.writeAt(buf, offset); err != nil { // 这是一个系统调用
 				return err
 			}
 
@@ -470,7 +470,7 @@ func (tx *Tx) write() error {
 
 	// Ignore file sync if flag is set on DB.
 	if !tx.db.NoSync || IgnoreNoSync {
-		if err := fdatasync(tx.db); err != nil { // 系统调用？
+		if err := fdatasync(tx.db); err != nil { // 系统调用
 			return err
 		}
 	}

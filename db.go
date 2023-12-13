@@ -1112,7 +1112,7 @@ func (db *DB) allocate(txid txid, count int) (*page, error) {
 	} else {
 		buf = make([]byte, count*db.pageSize)
 	}
-	p := (*page)(unsafe.Pointer(&buf[0]))
+	p := (*page)(unsafe.Pointer(&buf[0])) // 分配一个页
 	p.overflow = uint32(count - 1)
 
 	// Use pages from the freelist if they are available.

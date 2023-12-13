@@ -255,7 +255,7 @@ func (n *node) split(pageSize uintptr) []*node {
 	node := n
 	for {
 		// Split node into two.
-		a, b := node.splitTwo(pageSize)
+		a, b := node.splitTwo(pageSize) // 拆分成两个node
 		nodes = append(nodes, a)
 
 		// If we can't split then exit the loop.
@@ -289,7 +289,7 @@ func (n *node) splitTwo(pageSize uintptr) (*node, *node) {
 	threshold := int(float64(pageSize) * fillPercent)
 
 	// Determine split position and sizes of the two pages.
-	splitIndex, _ := n.splitIndex(threshold)
+	splitIndex, _ := n.splitIndex(threshold) // 用于找到一个页面应该填充给定阈值的位置。它返回分裂的索引位置以及第一页的大小
 
 	// Split node into two separate nodes.
 	// If there's no parent then we'll need to create one.
@@ -302,7 +302,7 @@ func (n *node) splitTwo(pageSize uintptr) (*node, *node) {
 	n.parent.children = append(n.parent.children, next)
 
 	// Split inodes across two nodes.
-	next.inodes = n.inodes[splitIndex:]
+	next.inodes = n.inodes[splitIndex:] // 分成两个node
 	n.inodes = n.inodes[:splitIndex]
 
 	// Update the statistics.
@@ -327,7 +327,7 @@ func (n *node) splitIndex(threshold int) (index, sz uintptr) {
 		// node would put us over the threshold then exit and return.
 		if index >= minKeysPerPage && sz+elsize > uintptr(threshold) {
 			break
-		}
+		} // 如果当前索引大于等于每页最小键数，并且如果添加当前元素的大小会使总大小超过阈值，那么循环就会结束。这意味着找到了分裂的位置。
 
 		// Add the element size to the total size.
 		sz += elsize
@@ -358,7 +358,7 @@ func (n *node) spill() error {
 	n.children = nil
 
 	// Split nodes into appropriate sizes. The first node will always be n.
-	var nodes = n.split(uintptr(tx.db.pageSize))
+	var nodes = n.split(uintptr(tx.db.pageSize)) // 拆成一个个node组成的list
 	for _, node := range nodes {
 		// Add node's page to the freelist if it's not new.
 		if node.pgid > 0 {
@@ -367,7 +367,7 @@ func (n *node) spill() error {
 		}
 
 		// Allocate contiguous space for the node.
-		p, err := tx.allocate((node.size() + tx.db.pageSize - 1) / tx.db.pageSize)
+		p, err := tx.allocate((node.size() + tx.db.pageSize - 1) / tx.db.pageSize) // 拿到一个页
 		if err != nil {
 			return err
 		}
@@ -377,7 +377,7 @@ func (n *node) spill() error {
 			panic(fmt.Sprintf("pgid (%d) above high water mark (%d)", p.id, tx.meta.pgid))
 		}
 		node.pgid = p.id
-		node.write(p)
+		node.write(p) // node转page
 		node.spilled = true
 
 		// Insert into parent inodes.
