@@ -28,7 +28,7 @@ const (
 type pgid uint64
 
 type page struct {
-	id       pgid   // page id (8 bytes)
+	id       pgid   // page id (8 bytes) uint64类型
 	flags    uint16 // 区分不同类型的 page (2 bytes)
 	count    uint16 // 不同类型page, count含义不同: 分支节点页count代表子节点数量；叶子节点页count代表本节点存储的kv对数量；空闲列表页count代表空闲页的数量。
 	overflow uint32 // 若单个 page 大小不够，会分配多个 page; overflow字段代表Page Body往后延伸占用了多少个物理页，也就是该逻辑page除本物理页还占用了几个连续物理页。 (4 bytes)
@@ -63,7 +63,7 @@ func (p *page) fastCheck(id pgid) {
 		"page %v: has unexpected type/flags: %x", p.id, p.flags)
 }
 
-// leafPageElement retrieves the leaf node by index
+// leafPageElement retrieves the leaf node by index; 这个函数的目的是根据提供的索引，计算出对应的leafPageElement在page中的位置，并返回一个指向该元素的指针。
 func (p *page) leafPageElement(index uint16) *leafPageElement {
 	return (*leafPageElement)(unsafeIndex(unsafe.Pointer(p), unsafe.Sizeof(*p),
 		leafPageElementSize, int(index)))
@@ -75,8 +75,8 @@ func (p *page) leafPageElements() []leafPageElement {
 		return nil
 	}
 	var elems []leafPageElement                             // {flags uint32 ,pos   uint32 ,ksize uint32 ,vsize uint32}
-	data := unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p)) // data在root这个page尾巴上
-	unsafeSlice(unsafe.Pointer(&elems), data, int(p.count)) // 修改elems，使它指向data，并且长度为int(p.count)
+	data := unsafeAdd(unsafe.Pointer(p), unsafe.Sizeof(*p)) // data在root这个page尾巴上 (data变量将指向p之后的内存位置)
+	unsafeSlice(unsafe.Pointer(&elems), data, int(p.count)) // 直接修改elems这个slice，使它指向data，并且长度为int(p.count)
 	return elems
 }
 
@@ -118,7 +118,7 @@ type branchPageElement struct { // 树节点数组元素
 
 // key returns a byte slice of the node key.
 func (n *branchPageElement) key() []byte {
-	return unsafeByteSlice(unsafe.Pointer(n), 0, int(n.pos), int(n.pos)+int(n.ksize))
+	return unsafeByteSlice(unsafe.Pointer(n), 0, int(n.pos), int(n.pos)+int(n.ksize)) // 返回了一个从n开始，长度为int(n.pos)+int(n.ksize)的slice
 }
 
 // leafPageElement represents a node on a leaf page.
@@ -171,6 +171,7 @@ func (a pgids) merge(b pgids) pgids {
 	return merged
 }
 
+// mergepgids函数，它将两个已排序的pgids类型切片合并到目标切片dst中。如果dst切片没有足够的空间来容纳合并后的元素，程序将会触发panic。
 // mergepgids copies the sorted union of a and b into dst.
 // If dst is too small, it panics.
 func mergepgids(dst, a, b pgids) {
@@ -188,11 +189,11 @@ func mergepgids(dst, a, b pgids) {
 	}
 
 	// Merged will hold all elements from both lists.
-	merged := dst[:0]
+	merged := dst[:0] // 这里使用了一个技巧，创建一个长度为0但容量等于dst的切片merged，用于存储合并后的元素。这样做可以避免分配新的内存，直接在dst的底层数组上操作。
 
 	// Assign lead to the slice with a lower starting value, follow to the higher value.
 	lead, follow := a, b
-	if b[0] < a[0] {
+	if b[0] < a[0] { // 这段代码确定了两个切片中哪个切片的第一个元素更小，更小的那个将作为lead，另一个作为follow
 		lead, follow = b, a
 	}
 
