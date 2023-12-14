@@ -658,27 +658,27 @@ func (b *Bucket) node(pgId pgid, parent *node) *node {
 	_assert(b.nodes != nil, "nodes map expected")
 
 	// Retrieve node if it's already been created.
-	if n := b.nodes[pgId]; n != nil { // 获取pgid的node
+	if n := b.nodes[pgId]; n != nil { // 获取pgid的node, 所以nodes里面装的是pgId
 		return n
 	}
 
 	// Otherwise create a node and cache it.
-	n := &node{bucket: b, parent: parent} // 创建新node
+	n := &node{bucket: b, parent: parent} // bucket里面没有这个pgID，则创建新node
 	if parent == nil {
-		b.rootNode = n
+		b.rootNode = n  // 没有parent，则node就是root
 	} else {
 		parent.children = append(parent.children, n)
 	}
 
 	// Use the inline page if this is an inline bucket.
 	var p = b.page
-	if p == nil {
+	if p == nil { // 如果bucket没有page
 		p = b.tx.page(pgId)
 	}
 
 	// Read the page into the node and cache it.
-	n.read(p) // page转node
-	b.nodes[pgId] = n
+	n.read(p) // page（内容）转node
+	b.nodes[pgId] = n  // 存node
 
 	// Update statistics.
 	b.tx.stats.IncNodeCount(1)

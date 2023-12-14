@@ -41,7 +41,7 @@ func (n *node) size() int {
 	sz, elsz := pageHeaderSize, n.pageElementSize() // pageHeader, element
 	for i := 0; i < len(n.inodes); i++ {
 		item := &n.inodes[i]
-		sz += elsz + uintptr(len(item.key)) + uintptr(len(item.value))
+		sz += elsz + uintptr(len(item.key)) + uintptr(len(item.value))   // 看上去是：一个pageHeader + N个（pageElement + key + value）
 	}
 	return int(sz)
 }
@@ -74,7 +74,7 @@ func (n *node) childAt(index int) *node {
 	if n.isLeaf {
 		panic(fmt.Sprintf("invalid childAt(%d) on a leaf node", index))
 	}
-	return n.bucket.node(n.inodes[index].pgid, n) // 没看懂
+	return n.bucket.node(n.inodes[index].pgid, n) // 根据pgId、和node本身，得到、或者创建并存入这个node到bucket
 }
 
 // childIndex returns the index of a given child node.
@@ -85,7 +85,7 @@ func (n *node) childIndex(child *node) int {
 
 // numChildren returns the number of children.
 func (n *node) numChildren() int {
-	return len(n.inodes)
+	return len(n.inodes)  // inodes和nodes数量一样？
 }
 
 // nextSibling returns the next node with the same parent.
@@ -114,7 +114,7 @@ func (n *node) prevSibling() *node {
 
 // put inserts a key/value.  写入node.inodes
 func (n *node) put(oldKey, newKey, value []byte, pgId pgid, flags uint32) {
-	if pgId >= n.bucket.tx.meta.pgid {
+	if pgId >= n.bucket.tx.meta.pgid {  // 所以pgId不能高于tx.meta.pgid
 		panic(fmt.Sprintf("pgId (%d) above high water mark (%d)", pgId, n.bucket.tx.meta.pgid))
 	} else if len(oldKey) <= 0 {
 		panic("put: zero-length old key")
@@ -159,12 +159,12 @@ func (n *node) del(key []byte) {
 
 // node 和 page 的相互转换通过 node.read(p *page) 和 node.write(p *page)
 // read initializes the node from a page. page --> node 前提是有一个已经建立好的page
-func (n *node) read(p *page) {
+func (n *node) read(p *page) {  // 更像是用一个page来初始化一个node
 	n.pgid = p.id
 	n.isLeaf = ((p.flags & leafPageFlag) != 0)
-	n.inodes = make(inodes, int(p.count))
+	n.inodes = make(inodes, int(p.count))  // 各种赋值
 
-	for i := 0; i < int(p.count); i++ {
+	for i := 0; i < int(p.count); i++ {  // 填充inodes
 		inode := &n.inodes[i]
 		if n.isLeaf {
 			elem := p.leafPageElement(uint16(i))
@@ -192,7 +192,7 @@ func (n *node) read(p *page) {
 // write writes the items onto one or more pages.
 // The page should have p.id (might be 0 for meta or bucket-inline page) and p.overflow set
 // and the rest should be zeroed.    node ---> page 前提是有一个已经建立的node
-func (n *node) write(p *page) {
+func (n *node) write(p *page) {   // 更像是用一个node去实例化一个page
 	_assert(p.count == 0 && p.flags == 0, "node cannot be written into a not empty page")
 
 	// Initialize page.
@@ -214,7 +214,7 @@ func (n *node) write(p *page) {
 
 	// Loop over each item and write it to the page.
 	// off tracks the offset into p of the start of the next data.
-	off := unsafe.Sizeof(*p) + n.pageElementSize()*uintptr(len(n.inodes))
+	off := unsafe.Sizeof(*p) + n.pageElementSize()*uintptr(len(n.inodes))   // page + (pageElement) * N
 	for i, item := range n.inodes { // 遍历node的所有inode
 		_assert(len(item.key) > 0, "write: zero-length inode key")
 
@@ -255,7 +255,7 @@ func (n *node) split(pageSize uintptr) []*node {
 	node := n
 	for {
 		// Split node into two.
-		a, b := node.splitTwo(pageSize) // 拆分成两个node
+		a, b := node.splitTwo(pageSize) // 拆分成两个node，但是并不是对半拆分
 		nodes = append(nodes, a)
 
 		// If we can't split then exit the loop.
@@ -325,7 +325,7 @@ func (n *node) splitIndex(threshold int) (index, sz uintptr) {
 
 		// If we have at least the minimum number of keys and adding another
 		// node would put us over the threshold then exit and return.
-		if index >= minKeysPerPage && sz+elsize > uintptr(threshold) {
+		if index >= minKeysPerPage && sz+elsize > uintptr(threshold) {  // 一定是minKeysPerPage之后的元素
 			break
 		} // 如果当前索引大于等于每页最小键数，并且如果添加当前元素的大小会使总大小超过阈值，那么循环就会结束。这意味着找到了分裂的位置。
 
@@ -338,7 +338,7 @@ func (n *node) splitIndex(threshold int) (index, sz uintptr) {
 
 // spill writes the nodes to dirty pages and splits nodes as it goes.
 // Returns an error if dirty pages cannot be allocated.
-func (n *node) spill() error {
+func (n *node) spill() error {   // spill感觉像是把一个node拆成很多小的node，然后给他们分配page，然后插入到parent
 	var tx = n.bucket.tx
 	if n.spilled {
 		return nil
@@ -367,7 +367,7 @@ func (n *node) spill() error {
 		}
 
 		// Allocate contiguous space for the node.
-		p, err := tx.allocate((node.size() + tx.db.pageSize - 1) / tx.db.pageSize) // 拿到一个页
+		p, err := tx.allocate((node.size() + tx.db.pageSize - 1) / tx.db.pageSize) // 根据node，分配一个页
 		if err != nil {
 			return err
 		}
@@ -377,7 +377,7 @@ func (n *node) spill() error {
 			panic(fmt.Sprintf("pgid (%d) above high water mark (%d)", p.id, tx.meta.pgid))
 		}
 		node.pgid = p.id
-		node.write(p) // node转page
+		node.write(p) // 用一个node去实例化一个page
 		node.spilled = true
 
 		// Insert into parent inodes.
