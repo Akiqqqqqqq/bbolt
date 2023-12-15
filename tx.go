@@ -14,13 +14,13 @@ import (
 // txid represents the internal transaction identifier.
 type txid uint64
 
-// Tx represents a read-only or read/write transaction on the database. 代表只读/读写事务
-// Read-only transactions can be used for retrieving values for keys and creating cursors.
-// Read/write transactions can create and remove buckets and create and remove keys.
+// Tx represents a read-only or read/write transaction on the database. Tx代表数据库上的一个只读或读写事务。
+// Read-only transactions can be used for retrieving values for keys and creating cursors.  只读事务可以用于检索键的值和创建游标。
+// Read/write transactions can create and remove buckets and create and remove keys.  读写事务可以创建和删除桶以及创建和删除键。
 //
-// IMPORTANT: You must commit or rollback transactions when you are done with  必须commit或者rollback
-// them. Pages can not be reclaimed by the writer until no more transactions
-// are using them. A long running read transaction can cause the database to  // 长只读事务会导致db增长？
+// IMPORTANT: You must commit or rollback transactions when you are done with  重要提示：当你完成事务后，必须提交或回滚事务。
+// them. Pages can not be reclaimed by the writer until no more transactions   只有当没有更多事务在使用它们时，写入者才能回收页面。
+// are using them. A long running read transaction can cause the database to   长时间运行的读事务会导致数据库快速增长。
 // quickly grow.
 type Tx struct {
 	writable       bool
@@ -28,7 +28,7 @@ type Tx struct {
 	db             *DB // db指针
 	meta           *meta
 	root           Bucket         // Bucket指针(back)
-	pages          map[pgid]*page // 脏页
+	pages          map[pgid]*page // 脏页；用于跟踪事务期间被修改的页面，这些页面在事务提交时需要被刷新到磁盘。
 	stats          TxStats
 	commitHandlers []func()
 
@@ -38,7 +38,7 @@ type Tx struct {
 	// By default, the flag is unset, which works well for mostly in-memory
 	// workloads. For databases that are much larger than available RAM,
 	// set the flag to syscall.O_DIRECT to avoid trashing the page cache.
-	WriteFlag int
+	WriteFlag int // 用于指定写操作相关方法的标志。例如，如果数据库文件非常大，超出了可用内存，可以设置为syscall.O_DIRECT以避免影响页面缓存。
 }
 
 // init initializes the transaction.
@@ -48,16 +48,16 @@ func (tx *Tx) init(db *DB) {
 
 	// Copy the meta page since it can be changed by the writer.
 	tx.meta = &meta{}
-	db.meta().copy(tx.meta) // 拷贝meta页
+	db.meta().copy(tx.meta) // 拷贝db的meta页到tx
 
 	// Copy over the root bucket. 总结，root是一个新Bucket，root的bucket是meta.root，也就是指向leafPage
-	tx.root = newBucket(tx)        // 赋值root Bucket; tx的操作对象是bucket
-	tx.root.bucket = &bucket{}     // 新建一个bucket指针
-	*tx.root.bucket = tx.meta.root // 赋值内容（相当于copy了meta.root = bucket{root: 3}
+	tx.root = newBucket(tx)        // Bucket类型：赋值root Bucket; tx的操作对象是bucket
+	tx.root.bucket = &bucket{}     // Bucket.bucket类型：新建一个Bucket.bucket指针
+	*tx.root.bucket = tx.meta.root // Bucket.bucket类型：赋值内容（相当于copy了meta.root = bucket{root: 3}
 
 	// Increment the transaction id and add a page cache for writable transactions.
 	if tx.writable {
-		tx.pages = make(map[pgid]*page) // 增加一个page cache
+		tx.pages = make(map[pgid]*page) // 增加一个page cache（脏页缓存，事务期间修改的页面）
 		tx.meta.txid += txid(1)         // txid自增
 	}
 }
@@ -74,7 +74,7 @@ func (tx *Tx) DB() *DB {
 
 // Size returns current database size in bytes as seen by this transaction.
 func (tx *Tx) Size() int64 {
-	return int64(tx.meta.pgid) * int64(tx.db.pageSize)
+	return int64(tx.meta.pgid) * int64(tx.db.pageSize) // pgid * pageSize就是db大小？
 }
 
 // Writable returns whether the transaction can perform write operations.
