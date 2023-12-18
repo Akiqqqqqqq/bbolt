@@ -424,7 +424,7 @@ func (tx *Tx) allocate(count int) (*page, error) {
 	return p, nil
 }
 
-// write writes any dirty pages to disk.
+// write writes any dirty pages to disk.  写脏页到磁盘
 func (tx *Tx) write() error {
 	// Sort pages by id.
 	pages := make(pages, 0, len(tx.pages))
