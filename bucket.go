@@ -27,11 +27,11 @@ const DefaultFillPercent = 0.5
 
 // Bucket represents a collection of key/value pairs inside the database.
 type Bucket struct {
-	*bucket
-	tx       *Tx                // the associated transaction
+	*bucket                     // type bucket
+	tx       *Tx                // the associated transaction  和Bucket关联的Tx
 	buckets  map[string]*Bucket // subbucket cache   嵌套Bucket
 	page     *page              // inline page reference
-	rootNode *node              // materialized node for the root page.
+	rootNode *node              // materialized node for the root page.  root page转成node化
 	nodes    map[pgid]*node     // node cache
 
 	// Sets the threshold for filling nodes when they split. By default,
@@ -77,7 +77,7 @@ func (b *Bucket) Writable() bool {
 }
 
 // Cursor creates a cursor associated with the bucket.
-// The cursor is only valid as long as the transaction is open.
+// The cursor is only valid as long as the transaction is open. Cursor只在tx打开的时候有效
 // Do not use a cursor after the transaction is closed.
 func (b *Bucket) Cursor() *Cursor {
 	// Update transaction statistics.
@@ -111,7 +111,7 @@ func (b *Bucket) Bucket(name []byte) *Bucket {
 
 	// Otherwise create a bucket and cache it.
 	var child = b.openBucket(v)
-	if b.buckets != nil {
+	if b.buckets != nil { // 如果第一次，则初始化嵌套buckets
 		b.buckets[string(name)] = child
 	}
 
@@ -119,7 +119,7 @@ func (b *Bucket) Bucket(name []byte) *Bucket {
 }
 
 // Helper method that re-interprets a sub-bucket value
-// from a parent into a Bucket
+// from a parent into a Bucket  其作用是将一个父 bucket 中的子 bucket 数据转换为一个 Bucket 结构体实例。
 func (b *Bucket) openBucket(value []byte) *Bucket {
 	var child = newBucket(b.tx)
 
@@ -129,21 +129,21 @@ func (b *Bucket) openBucket(value []byte) *Bucket {
 		page
 	}{}) - 1
 	unaligned := uintptr(unsafe.Pointer(&value[0]))&unalignedMask != 0
-	if unaligned {
+	if unaligned { // 这段代码检查 value 数组的地址是否对齐。如果地址未对齐（即不符合 bucket 和 page 结构体的预期对齐方式），则需要创建 value 的副本来避免未对齐访问，因为未对齐访问可能在某些平台上导致性能下降或者运行时错误。
 		value = cloneBytes(value)
 	}
 
 	// If this is a writable transaction then we need to copy the bucket entry.
 	// Read-only transactions can point directly at the mmap entry.
 	if b.tx.writable && !unaligned {
-		child.bucket = &bucket{}
+		child.bucket = &bucket{} // 如果是可写事务并且数据已经对齐，则会创建一个新的 bucket 结构体并copy数据到这个新结构体中。
 		*child.bucket = *(*bucket)(unsafe.Pointer(&value[0]))
-	} else {
+	} else { // 如果是只读事务或者数据未对齐，则直接将 value 的地址转换为 *bucket 类型，并将其赋给 child.bucket
 		child.bucket = (*bucket)(unsafe.Pointer(&value[0]))
 	}
 
 	// Save a reference to the inline page if the bucket is inline.
-	if child.root == 0 {
+	if child.root == 0 { // 这里检查子 bucket 是否是内联的（即存储在父 bucket 的键空间中）
 		child.page = (*page)(unsafe.Pointer(&value[bucketHeaderSize]))
 	}
 
@@ -282,9 +282,9 @@ func (b *Bucket) Put(key []byte, value []byte) error {
 		return ErrTxNotWritable
 	} else if len(key) == 0 {
 		return ErrKeyRequired
-	} else if len(key) > MaxKeySize {
+	} else if len(key) > MaxKeySize { // 32768
 		return ErrKeyTooLarge
-	} else if int64(len(value)) > MaxValueSize {
+	} else if int64(len(value)) > MaxValueSize { // 2147483646
 		return ErrValueTooLarge
 	}
 
@@ -293,7 +293,7 @@ func (b *Bucket) Put(key []byte, value []byte) error {
 	k, _, flags := c.seek(key)
 
 	// Return an error if there is an existing key with a bucket value.
-	if bytes.Equal(key, k) && (flags&bucketLeafFlag) != 0 {
+	if bytes.Equal(key, k) && (flags&bucketLeafFlag) != 0 { // bucketLeafFlag是什么
 		return ErrIncompatibleValue
 	}
 
@@ -665,7 +665,7 @@ func (b *Bucket) node(pgId pgid, parent *node) *node {
 	// Otherwise create a node and cache it.
 	n := &node{bucket: b, parent: parent} // bucket里面没有这个pgID，则创建新node
 	if parent == nil {
-		b.rootNode = n  // 没有parent，则node就是root
+		b.rootNode = n // 没有parent，则node就是root
 	} else {
 		parent.children = append(parent.children, n)
 	}
@@ -677,8 +677,8 @@ func (b *Bucket) node(pgId pgid, parent *node) *node {
 	}
 
 	// Read the page into the node and cache it.
-	n.read(p) // page（内容）转node
-	b.nodes[pgId] = n  // 存node
+	n.read(p)         // page（内容）转node
+	b.nodes[pgId] = n // 存node
 
 	// Update statistics.
 	b.tx.stats.IncNodeCount(1)
