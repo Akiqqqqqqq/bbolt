@@ -25,9 +25,9 @@ type freelist struct {
 	allocs         map[pgid]txid               // mapping of txid that allocated a pgid.
 	pending        map[txid]*txPending         // mapping of soon-to-be free page ids by tx. 即将释放的页的page id
 	cache          map[pgid]struct{}           // fast lookup of all free and pending page ids.
-	freemaps       map[uint64]pidSet           // key is the size of continuous pages(span), value is a set which contains the starting pgids of same size
-	forwardMap     map[pgid]uint64             // key is start pgid, value is its span size
-	backwardMap    map[pgid]uint64             // key is end pgid, value is its span size
+	freemaps       map[uint64]pidSet           // key is the size of continuous pages(span), value is a set which contains the starting pgids of same size ;key是空闲块的连续页数量，value是所有起始页id的集合
+	forwardMap     map[pgid]uint64             // key is start pgid, value is its span size   key是空闲块的起始页id, value是空闲块的连续页数量
+	backwardMap    map[pgid]uint64             // key is end pgid, value is its span size     key是空闲块的末尾页id, value是空闲块的连续页数量
 	allocate       func(txid txid, n int) pgid // the freelist allocate func
 	free_count     func() int                  // the function which gives you free page number
 	mergeSpans     func(ids pgids)             // the mergeSpan func

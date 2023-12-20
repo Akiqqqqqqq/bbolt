@@ -26,7 +26,7 @@ const (
 const DefaultFillPercent = 0.5
 
 // Bucket represents a collection of key/value pairs inside the database.
-type Bucket struct {
+type Bucket struct { // 每个Bucket都是一个独立的B+树;
 	*bucket                     // type bucket
 	tx       *Tx                // the associated transaction  和Bucket关联的Tx
 	buckets  map[string]*Bucket // subbucket cache   嵌套Bucket
@@ -40,8 +40,8 @@ type Bucket struct {
 	//
 	// This is non-persisted across transactions so it must be set in every Tx.
 	FillPercent float64
-}
-
+} // Bucket（B+树）的每个节点占用一个物理页或者多个连续的物理页。
+// 当进程访问B+树节点的时候，会将B+树的节点反序列化为branchNode分支节点或者leafNode叶子节点。分支节点只存储用于查找的索引信息，叶子节点才存储真正的kv数据。
 // bucket represents the on-file representation of a bucket.
 // This is stored as the "value" of a bucket key. If the bucket is small enough, 这是一个bucket的key的内容
 // then its root page can be stored inline in the "value", after the bucket
