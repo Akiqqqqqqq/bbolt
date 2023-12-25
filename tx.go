@@ -151,7 +151,7 @@ func (tx *Tx) Commit() error {
 
 	// Rebalance nodes which have had deletions.
 	var startTime = time.Now()
-	tx.root.rebalance()
+	tx.root.rebalance()   // 以后再看
 	if tx.stats.GetRebalance() > 0 {
 		tx.stats.IncRebalanceTime(time.Since(startTime))
 	}
@@ -160,7 +160,7 @@ func (tx *Tx) Commit() error {
 
 	// spill data onto dirty pages.
 	startTime = time.Now()
-	if err := tx.root.spill(); err != nil { // node数据刷到page
+	if err := tx.root.spill(); err != nil { // node数据刷到page；node在堆上，page在mmap映射区？不是很懂
 		tx.rollback()
 		return err
 	}
@@ -199,7 +199,7 @@ func (tx *Tx) Commit() error {
 	}
 
 	// If strict mode is enabled then perform a consistency check.
-	if tx.db.StrictMode {
+	if tx.db.StrictMode {   // 生产不会走这里
 		ch := tx.Check()
 		var errs []string
 		for {
@@ -428,17 +428,17 @@ func (tx *Tx) allocate(count int) (*page, error) {
 func (tx *Tx) write() error {
 	// Sort pages by id.
 	pages := make(pages, 0, len(tx.pages))
-	for _, p := range tx.pages {
+	for _, p := range tx.pages {   // 拿到tx.pages，这些pages是刚刚spill的时候，node转成的page（应该是在堆里面？）
 		pages = append(pages, p)
 	}
 	// Clear out page cache early.
-	tx.pages = make(map[pgid]*page)
+	tx.pages = make(map[pgid]*page)  // 清理
 	sort.Sort(pages)
 
 	// Write pages to disk in order.
 	for _, p := range pages {
 		rem := (uint64(p.overflow) + 1) * uint64(tx.db.pageSize)
-		offset := int64(p.id) * int64(tx.db.pageSize)
+		offset := int64(p.id) * int64(tx.db.pageSize)  // 初始offset = pgid * pageSize
 		var written uintptr
 
 		// Write out page in "max allocation" sized chunks.
@@ -447,9 +447,9 @@ func (tx *Tx) write() error {
 			if sz > maxAllocSize-1 {
 				sz = maxAllocSize - 1
 			}
-			buf := unsafeByteSlice(unsafe.Pointer(p), written, 0, int(sz))
+			buf := unsafeByteSlice(unsafe.Pointer(p), written, 0, int(sz))  // 拿到p + written处的指针，然后转成一个byte slice，然后切[0:sz]
 
-			if _, err := tx.db.ops.writeAt(buf, offset); err != nil { // 这是一个系统调用
+			if _, err := tx.db.ops.writeAt(buf, offset); err != nil { // 系统调用writeAt,写到db文件的offset位置
 				return err
 			}
 

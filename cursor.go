@@ -366,12 +366,12 @@ func (c *Cursor) keyValue() ([]byte, []byte, uint32) { // 如果啥也没找到�
 	// Retrieve value from node.
 	if ref.node != nil { // 如果node不为空，则从node拿
 		inode := &ref.node.inodes[ref.index]
-		return inode.key, inode.value, inode.flags
+		return inode.key, inode.value, inode.flags   // 直接从node获取目标kv值
 	}
 
 	// Or retrieve value from page. 如果node为空，则从page拿
 	elem := ref.page.leafPageElement(uint16(ref.index))
-	return elem.key(), elem.value(), elem.flags
+	return elem.key(), elem.value(), elem.flags   // 从page获取目标kv值
 }
 
 // node returns the node that the cursor is currently positioned on.
@@ -386,7 +386,7 @@ func (c *Cursor) node() *node {
 	// Start from root and traverse down the hierarchy.
 	var n = c.stack[0].node // 从根(root=3)开始
 	if n == nil {
-		n = c.bucket.node(c.stack[0].page.id, nil) // 根都没有，创建一个node；比如最开始的时候
+		n = c.bucket.node(c.stack[0].page.id, nil) // 根都没有，创建一个node；比如最开始的时候；这里很重要！
 	}
 	for _, ref := range c.stack[:len(c.stack)-1] { // 从0到len(c.stack)-1遍历stack上的元素；相当于再走一遍stack上面的路径
 		_assert(!n.isLeaf, "expected branch node")

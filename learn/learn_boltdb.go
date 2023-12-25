@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -34,4 +35,7 @@ func main() {
 	if err != nil {
 		return
 	}
+
+	// TODO: 看看只读事务、
+	// 以及db.Update(func)的逻辑: 就是帮你写了begin和commit
 }

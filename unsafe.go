@@ -30,7 +30,7 @@ func unsafeByteSlice(base unsafe.Pointer, offset uintptr, i, j int) []byte { // 
 // unsafeSlice modifies the data, len, and cap of a slice variable pointed to by
 // the slice parameter.  This helper should be used over other direct
 // manipulation of reflect.SliceHeader to prevent misuse, namely, converting
-// from reflect.SliceHeader to a Go slice type. 这个Go函数unsafeSlice使用unsafe包来修改一个切片的底层数据指针、长度（len）和容量（cap）。这个函数的目的是为了提供一种安全的方式去直接修改切片的内部结构，而不是通过直接操作reflect.SliceHeader来避免潜在的错误用法。
+// from reflect.SliceHeader to a Go slice type. 使用unsafe包来修改一个切片的底层数据指针、长度（len）和容量（cap）。这个函数的目的是为了提供一种安全的方式去直接修改切片的内部结构，而不是通过直接操作reflect.SliceHeader来避免潜在的错误用法。
 func unsafeSlice(slice, data unsafe.Pointer, len int) {
 	s := (*reflect.SliceHeader)(slice) // 将slice参数（一个unsafe.Pointer）转换为一个指向reflect.SliceHeader的指针
 	s.Data = uintptr(data)             // 设置reflect.SliceHeader的Data字段为data参数的值, 这样切片就会指向data指针指向的内存。

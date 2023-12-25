@@ -85,7 +85,7 @@ func (b *Bucket) Cursor() *Cursor {
 
 	// Allocate and return a cursor.
 	return &Cursor{
-		bucket: b,
+		bucket: b,  // 把Bucket传给cursor
 		stack:  make([]elemRef, 0),
 	}
 }
@@ -95,14 +95,14 @@ func (b *Bucket) Cursor() *Cursor {
 // The bucket instance is only valid for the lifetime of the transaction.
 func (b *Bucket) Bucket(name []byte) *Bucket {
 	if b.buckets != nil {
-		if child := b.buckets[string(name)]; child != nil {
+		if child := b.buckets[string(name)]; child != nil {  // 查看嵌套bucket
 			return child
 		}
 	}
 
 	// Move cursor to key.
 	c := b.Cursor()
-	k, v, flags := c.seek(name)
+	k, v, flags := c.seek(name)  // 这次就可以直接从node里面搜到了
 
 	// Return nil if the key doesn't exist or it is not a bucket.
 	if !bytes.Equal(name, k) || (flags&bucketLeafFlag) == 0 {
@@ -630,15 +630,15 @@ func (b *Bucket) maxInlineBucketSize() uintptr {
 func (b *Bucket) write() []byte {
 	// Allocate the appropriate size.
 	var n = b.rootNode
-	var value = make([]byte, bucketHeaderSize+n.size()) // 分配这个inline bucket的空间（bucketHeaderSize + n.size()），用value指向它 n.size = pageHeaderSize + (eleSize)
+	var value = make([]byte, bucketHeaderSize+n.size()) // 堆上分配这个inline bucket的空间（bucketHeaderSize + n.size()），用value指向它 n.size = pageHeaderSize + (eleSize)
 
 	// Write a bucket header.
 	var bucket = (*bucket)(unsafe.Pointer(&value[0])) // 设置指针，指向value[0]
-	*bucket = *b.bucket                               // 拷贝内容到value[0]
+	*bucket = *b.bucket                               // 拷贝内容到value[0]，相当于在value[0]处写了一个bucketHeader
 
 	// Convert byte slice to a fake page and write the root node.
 	var p = (*page)(unsafe.Pointer(&value[bucketHeaderSize])) // 在 value[bucketHeaderSize] 处分配一个page指针
-	n.write(p)                                                // rootNode转page, rootNode写到bucketHeaderSize后面（看上去node和page等价）
+	n.write(p)                                                // rootNode转page, rootNode的内容写到bucketHeaderSize后面（看上去node和page等价），就是不断拷贝node的inode的key和value过来到p处
 
 	return value // value:  | bucketHeaderSize | pageHeaderSize | elemSize * n |
 }
@@ -654,7 +654,7 @@ func (b *Bucket) rebalance() {
 }
 
 // node creates a node from a page and associates it with a given parent.
-func (b *Bucket) node(pgId pgid, parent *node) *node {
+func (b *Bucket) node(pgId pgid, parent *node) *node {  // 一开始这里传进来pgid=3
 	_assert(b.nodes != nil, "nodes map expected")
 
 	// Retrieve node if it's already been created.
@@ -673,7 +673,7 @@ func (b *Bucket) node(pgId pgid, parent *node) *node {
 	// Use the inline page if this is an inline bucket.
 	var p = b.page
 	if p == nil { // 如果bucket没有page
-		p = b.tx.page(pgId)
+		p = b.tx.page(pgId)  // 从mmap营社区拿到3号page，即leafpage
 	}
 
 	// Read the page into the node and cache it.
@@ -706,7 +706,7 @@ func (b *Bucket) free() {
 // dereference removes all references to the old mmap.
 func (b *Bucket) dereference() {
 	if b.rootNode != nil {
-		b.rootNode.root().dereference()
+		b.rootNode.root().dereference()  // 递归找到root，然后dereference，其实将 node 中的键值数据从内存映射区（mmap）拷贝到堆内存中，确保在 mmap 重新分配时，这些节点不会指向无效的数据
 	}
 
 	for _, child := range b.buckets {

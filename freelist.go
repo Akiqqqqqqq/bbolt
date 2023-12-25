@@ -192,7 +192,7 @@ func (f *freelist) release(txid txid) {
 			delete(f.pending, tid)
 		}
 	}
-	f.mergeSpans(m)
+	f.mergeSpans(m)  // 合并
 }
 
 // releaseRange moves pending pages allocated within an extent [begin,end] to the free list.
@@ -262,7 +262,7 @@ func (f *freelist) freed(pgId pgid) bool {
 }
 
 // read initializes the freelist from a freelist page. read方法从freelist page来初始化一个freelist
-func (f *freelist) read(p *page) {
+func (f *freelist) read(p *page) {  // 主要用于从一个标记为 freelistPageFlag 的页面初始化 freelist 结构，这里传入的p就是编号为2的freelist的page
 	if (p.flags & freelistPageFlag) == 0 {
 		panic(fmt.Sprintf("invalid freelist page: %d, page type is %s", p.id, p.typ()))
 	}
@@ -282,9 +282,9 @@ func (f *freelist) read(p *page) {
 	if count == 0 {
 		f.ids = nil // 第一次进来
 	} else {
-		var ids []pgid
-		data := unsafeIndex(unsafe.Pointer(p), unsafe.Sizeof(*p), unsafe.Sizeof(ids[0]), idx) // p + sizeof(p) + sizeof(id)*idx
-		unsafeSlice(unsafe.Pointer(&ids), data, count)                                        // 使ids指向新的内存地址，并具有新的长度和容量
+		var ids []pgid  // ids数组
+		data := unsafeIndex(unsafe.Pointer(p), unsafe.Sizeof(*p), unsafe.Sizeof(ids[0]), idx) // p + sizeof(p) + sizeof(id)*idx 得到data指针位置
+		unsafeSlice(unsafe.Pointer(&ids), data, count)                                        // 使ids这个slice指向新的内存地址data，并具有新的长度和容量count
 
 		// copy the ids, so we don't modify on the freelist page directly
 		idsCopy := make([]pgid, count)

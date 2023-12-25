@@ -38,7 +38,7 @@ const (
 )
 
 // default page size for db is set to the OS page size.
-var defaultPageSize = os.Getpagesize()
+var defaultPageSize = os.Getpagesize()  // 假设是4kb
 
 // The time elapsed between consecutive file locking attempts.
 const flockRetryTimeout = 50 * time.Millisecond
@@ -59,7 +59,7 @@ const (
 type DB struct {
 	// When enabled, the database will perform a Check() after every commit.
 	// A panic is issued if the database is in an inconsistent state. This
-	// flag has a large performance impact so it should only be used for
+	// flag has a large performance impact so it should only be used for 生产环境不要用，对性能影响很大
 	// debugging purposes.
 	StrictMode bool
 
@@ -455,7 +455,7 @@ func (db *DB) mmap(minsz int) (err error) {
 
 	// Dereference all mmap references before unmapping.
 	if db.rwtx != nil { // 还有读写事务引用
-		db.rwtx.root.dereference()
+		db.rwtx.root.dereference()  // 释放mmap内存区的数据到heap堆上
 	}
 
 	// Unmap existing data before continuing.
@@ -593,7 +593,7 @@ func (db *DB) mrelock(fileSizeFrom, fileSizeTo int) error {
 // init creates a new database file and initializes its meta pages.
 func (db *DB) init() error {
 	// Create two meta pages on a buffer.
-	buf := make([]byte, db.pageSize*4) // 内存里面申请4个page的地址和空间（这个buf在init()后就释放了，init()函数目的就是写4个page到磁盘，后面mmap会再去引用它）
+	buf := make([]byte, db.pageSize*4) // 堆内存里面申请4个page的地址和空间（这个buf在init()后就释放了，init()函数目的就是写4个page到磁盘，后面mmap会再去引用它）
 	for i := 0; i < 2; i++ {           // 在buf里面建立两个meta page
 		p := db.pageInBuffer(buf, pgid(i)) // pageInBuffer retrieves a page reference from a given byte array based on the current page size. 返回page指针
 		p.id = pgid(i)
@@ -799,7 +799,7 @@ func (db *DB) beginRWTx() (*Tx, error) {
 }
 
 // freePages releases any pages associated with closed read-only transactions.
-func (db *DB) freePages() {
+func (db *DB) freePages() {  //看不懂
 	// Free all pending pages prior to earliest open transaction.
 	sort.Sort(txsById(db.txs))
 	minid := txid(0xFFFFFFFFFFFFFFFF)
@@ -1108,7 +1108,7 @@ func (db *DB) allocate(txid txid, count int) (*page, error) {
 	// Allocate a temporary buffer for the page.
 	var buf []byte
 	if count == 1 {
-		buf = db.pagePool.Get().([]byte)
+		buf = db.pagePool.Get().([]byte)   // 这个页是在堆上？
 	} else {
 		buf = make([]byte, count*db.pageSize)
 	}

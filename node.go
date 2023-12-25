@@ -193,7 +193,7 @@ func (n *node) read(p *page) {  // 更像是用一个page来初始化一个node
 // The page should have p.id (might be 0 for meta or bucket-inline page) and p.overflow set
 // and the rest should be zeroed.    node ---> page 前提是有一个已经建立的node
 func (n *node) write(p *page) {   // 更像是用一个node去实例化一个page
-	_assert(p.count == 0 && p.flags == 0, "node cannot be written into a not empty page")
+	_assert(p.count == 0 && p.flags == 0, "node cannot be written into a not empty page")  // 总结来说就是不断拷贝node的inode的key和value过来到p处
 
 	// Initialize page.
 	if n.isLeaf {
@@ -214,15 +214,15 @@ func (n *node) write(p *page) {   // 更像是用一个node去实例化一个pag
 
 	// Loop over each item and write it to the page.
 	// off tracks the offset into p of the start of the next data.
-	off := unsafe.Sizeof(*p) + n.pageElementSize()*uintptr(len(n.inodes))   // page + (pageElement) * N
+	off := unsafe.Sizeof(*p) + n.pageElementSize()*uintptr(len(n.inodes))   // |page| + |(pageElement) * N|
 	for i, item := range n.inodes { // 遍历node的所有inode
 		_assert(len(item.key) > 0, "write: zero-length inode key")
 
 		// Create a slice to write into of needed size and advance
 		// byte pointer for next iteration.
 		sz := len(item.key) + len(item.value)
-		b := unsafeByteSlice(unsafe.Pointer(p), off, 0, sz) // 从p处“开辟”一段内存
-		off += uintptr(sz)
+		b := unsafeByteSlice(unsafe.Pointer(p), off, 0, sz) // 从p + off处转成一个byte slice，然后切[0:sz]
+		off += uintptr(sz)  // off增加sz
 
 		// Write the page element.
 		if n.isLeaf { // node是叶子
@@ -240,8 +240,8 @@ func (n *node) write(p *page) {   // 更像是用一个node去实例化一个pag
 		}
 
 		// Write data for the element to the end of the page.
-		l := copy(b, item.key)
-		copy(b[l:], item.value)
+		l := copy(b, item.key)   // 拷贝key
+		copy(b[l:], item.value)  // 拷贝value
 	}
 
 	// DEBUG ONLY: n.dump()
@@ -521,24 +521,24 @@ func (n *node) removeChild(target *node) {
 }
 
 // dereference causes the node to copy all its inode key/value references to heap memory.
-// This is required when the mmap is reallocated so inodes are not pointing to stale data. 看不懂
+// This is required when the mmap is reallocated so inodes are not pointing to stale data. 这个方法的主要作用是将 node 中的键值数据从内存映射区（mmap）拷贝到堆内存中，确保在 mmap 重新分配时，这些节点不会指向无效的数据
 func (n *node) dereference() {
 	if n.key != nil {
-		key := make([]byte, len(n.key))
-		copy(key, n.key)
-		n.key = key
+		key := make([]byte, len(n.key))  // 在堆上分配内存
+		copy(key, n.key)                 // 拷贝 key 数据到新分配的内存
+		n.key = key                      // 更新节点的 key 引用到新内存
 		_assert(n.pgid == 0 || len(n.key) > 0, "dereference: zero-length node key on existing node")
 	}
 
 	for i := range n.inodes {
 		inode := &n.inodes[i]
 
-		key := make([]byte, len(inode.key))
+		key := make([]byte, len(inode.key))  // 把inode.key拷贝到另一端内存key中（和上面一样）
 		copy(key, inode.key)
-		inode.key = key
+		inode.key = key                      // 再inode.key指向key
 		_assert(len(inode.key) > 0, "dereference: zero-length inode key")
 
-		value := make([]byte, len(inode.value))
+		value := make([]byte, len(inode.value))  // value同理
 		copy(value, inode.value)
 		inode.value = value
 	}
