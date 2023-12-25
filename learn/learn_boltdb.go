@@ -16,6 +16,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	db.View()
 	_, err = tx.CreateBucket([]byte("test_bucket"))
 	if err != nil {
 		panic(err)
@@ -36,6 +37,6 @@ func main() {
 		return
 	}
 
-	// TODO: 看看只读事务、
+	// TODO: 看看只读事务、好像就是copy了meta，append到了db.txs
 	// 以及db.Update(func)的逻辑: 就是帮你写了begin和commit
 }

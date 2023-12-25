@@ -718,7 +718,7 @@ func (db *DB) Begin(writable bool) (*Tx, error) {
 	return db.beginTx()
 }
 
-func (db *DB) beginTx() (*Tx, error) {
+func (db *DB) beginTx() (*Tx, error) {  // 开启只读事务
 	// Lock the meta pages while we initialize the transaction. We obtain
 	// the meta lock before the mmap lock because that's the order that the
 	// write transaction will obtain them.
@@ -727,7 +727,7 @@ func (db *DB) beginTx() (*Tx, error) {
 	// Obtain a read-only lock on the mmap. When the mmap is remapped it will
 	// obtain a write lock so all transactions must finish before it can be
 	// remapped.
-	db.mmaplock.RLock()
+	db.mmaplock.RLock()   // 锁住这个mmap区域
 
 	// Exit if the database is not open yet.
 	if !db.opened {
