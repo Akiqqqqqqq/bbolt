@@ -276,7 +276,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	// Initialize page pool.  页池
 	db.pagePool = sync.Pool{
 		New: func() interface{} {
-			return make([]byte, db.pageSize)
+			return make([]byte, db.pageSize)   // 调用pagePool.Get()会返回一个长度为4kb的[]byte
 		},
 	}
 
@@ -406,13 +406,13 @@ func (db *DB) getPageSizeFromSecondMeta() (int, bool, error) {
 // concurrent accesses being made to the freelist.
 func (db *DB) loadFreelist() {
 	db.freelistLoad.Do(func() {
-		db.freelist = newFreelist(db.FreelistType) // 实例化freeList成员变量, 里面有很多map容器
+		db.freelist = newFreelist(db.FreelistType) // 在堆上，实例化freeList成员变量, 里面有很多map容器
 		if !db.hasSyncedFreelist() {
 			// Reconstruct free list by scanning the DB.
 			db.freelist.readIDs(db.freepages())
 		} else { // 第一次进入这里, 这里完成了f.ids = nil
 			// Read free list from freelist page.
-			db.freelist.read(db.page(db.meta().freelist)) // db.meta().freelist初始为2; db.page(db.meta().freelist)拿到第3个page, 也就是freelistPage类型的page
+			db.freelist.read(db.page(db.meta().freelist)) // db.meta().freelist初始为pgid=2; db.page(db.meta().freelist)拿到第3个page, 也就是freelistPage类型的page
 		}
 		db.stats.FreePageN = db.freelist.free_count() // 第一次为0
 	})
