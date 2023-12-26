@@ -54,7 +54,7 @@ type bucket struct {
 // newBucket returns a new bucket associated with a transaction.  Bucket是Tx new出来的
 func newBucket(tx *Tx) Bucket {
 	var b = Bucket{tx: tx, FillPercent: DefaultFillPercent} // 简简单单new了一个结构体出来
-	if tx.writable {
+	if tx.writable {                                        // 读写事务才有下面的缓存
 		b.buckets = make(map[string]*Bucket) // 嵌套bucket
 		b.nodes = make(map[pgid]*node)       // bucket下的nodes
 	}
@@ -85,24 +85,24 @@ func (b *Bucket) Cursor() *Cursor {
 
 	// Allocate and return a cursor.
 	return &Cursor{
-		bucket: b,  // 把Bucket传给cursor
+		bucket: b, // 把Bucket传给cursor
 		stack:  make([]elemRef, 0),
 	}
 }
 
 // Bucket retrieves a nested bucket by name.   取回一个指定的嵌套的bucket
 // Returns nil if the bucket does not exist.
-// The bucket instance is only valid for the lifetime of the transaction.
+// The bucket instance is only valid for the lifetime of the transaction.  是不是bucket name必须唯一，包括不能和kv的k重合
 func (b *Bucket) Bucket(name []byte) *Bucket {
 	if b.buckets != nil {
-		if child := b.buckets[string(name)]; child != nil {  // 查看嵌套bucket
+		if child := b.buckets[string(name)]; child != nil { // 查看嵌套bucket
 			return child
 		}
 	}
 
 	// Move cursor to key.
 	c := b.Cursor()
-	k, v, flags := c.seek(name)  // 这次就可以直接从node里面搜到了
+	k, v, flags := c.seek(name) // 这次就可以直接从node里面搜到了
 
 	// Return nil if the key doesn't exist or it is not a bucket.
 	if !bytes.Equal(name, k) || (flags&bucketLeafFlag) == 0 {
@@ -654,7 +654,7 @@ func (b *Bucket) rebalance() {
 }
 
 // node creates a node from a page and associates it with a given parent.
-func (b *Bucket) node(pgId pgid, parent *node) *node {  // 一开始这里传进来pgid=3
+func (b *Bucket) node(pgId pgid, parent *node) *node { // 一开始这里传进来pgid=3
 	_assert(b.nodes != nil, "nodes map expected")
 
 	// Retrieve node if it's already been created.
@@ -673,7 +673,7 @@ func (b *Bucket) node(pgId pgid, parent *node) *node {  // 一开始这里传进
 	// Use the inline page if this is an inline bucket.
 	var p = b.page
 	if p == nil { // 如果bucket没有page
-		p = b.tx.page(pgId)  // 从mmap营社区拿到3号page，即leafpage
+		p = b.tx.page(pgId) // 从mmap营社区拿到3号page，即leafpage
 	}
 
 	// Read the page into the node and cache it.
@@ -706,7 +706,7 @@ func (b *Bucket) free() {
 // dereference removes all references to the old mmap.
 func (b *Bucket) dereference() {
 	if b.rootNode != nil {
-		b.rootNode.root().dereference()  // 递归找到root，然后dereference，其实将 node 中的键值数据从内存映射区（mmap）拷贝到堆内存中，确保在 mmap 重新分配时，这些节点不会指向无效的数据
+		b.rootNode.root().dereference() // 递归找到root，然后dereference，其实将 node 中的键值数据从内存映射区（mmap）拷贝到堆内存中，确保在 mmap 重新分配时，这些节点不会指向无效的数据
 	}
 
 	for _, child := range b.buckets {

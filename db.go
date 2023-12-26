@@ -38,7 +38,7 @@ const (
 )
 
 // default page size for db is set to the OS page size.
-var defaultPageSize = os.Getpagesize()  // 假设是4kb
+var defaultPageSize = os.Getpagesize() // 假设是4kb
 
 // The time elapsed between consecutive file locking attempts.
 const flockRetryTimeout = 50 * time.Millisecond
@@ -455,7 +455,7 @@ func (db *DB) mmap(minsz int) (err error) {
 
 	// Dereference all mmap references before unmapping.
 	if db.rwtx != nil { // 还有读写事务引用
-		db.rwtx.root.dereference()  // 释放mmap内存区的数据到heap堆上
+		db.rwtx.root.dereference() // 释放mmap内存区的数据到heap堆上
 	}
 
 	// Unmap existing data before continuing.
@@ -718,16 +718,16 @@ func (db *DB) Begin(writable bool) (*Tx, error) {
 	return db.beginTx()
 }
 
-func (db *DB) beginTx() (*Tx, error) {  // 开启只读事务
+func (db *DB) beginTx() (*Tx, error) { // 开启只读事务
 	// Lock the meta pages while we initialize the transaction. We obtain
 	// the meta lock before the mmap lock because that's the order that the
 	// write transaction will obtain them.
-	db.metalock.Lock()
+	db.metalock.Lock() // 获取只读事务的时候，先锁住meta
 
 	// Obtain a read-only lock on the mmap. When the mmap is remapped it will
 	// obtain a write lock so all transactions must finish before it can be
 	// remapped.
-	db.mmaplock.RLock()   // 锁住这个mmap区域
+	db.mmaplock.RLock() // 锁住这个mmap区域；在remap前，所有tx必须完成
 
 	// Exit if the database is not open yet.
 	if !db.opened {
@@ -744,15 +744,15 @@ func (db *DB) beginTx() (*Tx, error) {  // 开启只读事务
 	}
 
 	// Create a transaction associated with the database.
-	t := &Tx{}
-	t.init(db)
+	t := &Tx{} // 没有writable: true
+	t.init(db) // 主要就是new了tx，拷贝了rootPage和freeListPage的信息到tx
 
 	// Keep track of transaction until it closes.
-	db.txs = append(db.txs, t)
+	db.txs = append(db.txs, t) // 记录tx直到关闭
 	n := len(db.txs)
 
 	// Unlock the meta pages.
-	db.metalock.Unlock()
+	db.metalock.Unlock() // 解锁meta
 
 	// Update the transaction stats.
 	db.statlock.Lock()
@@ -774,7 +774,7 @@ func (db *DB) beginRWTx() (*Tx, error) {
 	db.rwlock.Lock()
 
 	// Once we have the writer lock then we can lock the meta pages so that
-	// we can set up the transaction.  锁住meta页来启动一个事务
+	// we can set up the transaction.  锁住meta页来获取一个事务
 	db.metalock.Lock()
 	defer db.metalock.Unlock()
 
@@ -792,14 +792,14 @@ func (db *DB) beginRWTx() (*Tx, error) {
 
 	// Create a transaction associated with the database.
 	t := &Tx{writable: true}
-	t.init(db)
+	t.init(db)     // 主要就是new了tx，拷贝了rootPage和freeListPage的信息到tx；还给tx new了一些node、page缓存的容器
 	db.rwtx = t    // 赋值db读写事务（由于是单线程的，所以db的rwtx是单例的）
 	db.freePages() // 释放已关闭的只读事务的页缓存
 	return t, nil
 }
 
 // freePages releases any pages associated with closed read-only transactions.
-func (db *DB) freePages() {  //看不懂
+func (db *DB) freePages() { //看不懂
 	// Free all pending pages prior to earliest open transaction.
 	sort.Sort(txsById(db.txs))
 	minid := txid(0xFFFFFFFFFFFFFFFF)
@@ -1108,12 +1108,12 @@ func (db *DB) allocate(txid txid, count int) (*page, error) {
 	// Allocate a temporary buffer for the page.
 	var buf []byte
 	if count == 1 {
-		buf = db.pagePool.Get().([]byte)   // 这个页是在堆上？
+		buf = db.pagePool.Get().([]byte) // 这个页是在堆上？
 	} else {
 		buf = make([]byte, count*db.pageSize)
 	}
 	p := (*page)(unsafe.Pointer(&buf[0])) // 分配一个页
-	p.overflow = uint32(count - 1)  // p占据大小
+	p.overflow = uint32(count - 1)        // p占据大小
 
 	// Use pages from the freelist if they are available.
 	if p.id = db.freelist.allocate(txid, count); p.id != 0 {

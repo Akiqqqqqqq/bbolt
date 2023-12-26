@@ -43,19 +43,19 @@ type Tx struct {
 
 // init initializes the transaction.
 func (tx *Tx) init(db *DB) {
-	tx.db = db
-	tx.pages = nil // tx也有pages引用
+	tx.db = db     // tx指向db
+	tx.pages = nil // 应该是tx的page缓存吧 <pgid, page>
 
 	// Copy the meta page since it can be changed by the writer.
 	tx.meta = &meta{}
-	db.meta().copy(tx.meta) // 拷贝db的meta页到tx
+	db.meta().copy(tx.meta) // 拷贝db的meta页到tx（meta里面有rootPage和freelistPage的pgid）
 
 	// Copy over the root bucket. 总结，root是一个新Bucket，root的bucket是meta.root，也就是指向leafPage
 	tx.root = newBucket(tx)        // Bucket类型：赋值root Bucket; tx的操作对象是bucket
 	tx.root.bucket = &bucket{}     // Bucket.bucket类型：新建一个Bucket.bucket指针
-	*tx.root.bucket = tx.meta.root // Bucket.bucket类型：赋值内容（相当于copy了meta.root = bucket{root: 3}
+	*tx.root.bucket = tx.meta.root // Bucket.bucket类型：赋值内容（相当于copy了meta.root = bucket{root: 3}，相当于把rootPage的信息拷贝到tx.root.bucket了
 
-	// Increment the transaction id and add a page cache for writable transactions.
+	// Increment the transaction id and add a page cache for writable transactions.  读写事务才有下面的pages缓存，以及自增txid
 	if tx.writable {
 		tx.pages = make(map[pgid]*page) // 增加一个page cache（脏页缓存，事务期间修改的页面）
 		tx.meta.txid += txid(1)         // txid自增
@@ -74,7 +74,7 @@ func (tx *Tx) DB() *DB {
 
 // Size returns current database size in bytes as seen by this transaction.
 func (tx *Tx) Size() int64 {
-	return int64(tx.meta.pgid) * int64(tx.db.pageSize) // pgid * pageSize就是db大小？
+	return int64(tx.meta.pgid) * int64(tx.db.pageSize) // pgid * pageSize就是当下db大小？看来page是线性排列的
 }
 
 // Writable returns whether the transaction can perform write operations.
@@ -151,7 +151,7 @@ func (tx *Tx) Commit() error {
 
 	// Rebalance nodes which have had deletions.
 	var startTime = time.Now()
-	tx.root.rebalance()   // 以后再看
+	tx.root.rebalance() // 以后再看
 	if tx.stats.GetRebalance() > 0 {
 		tx.stats.IncRebalanceTime(time.Since(startTime))
 	}
@@ -199,7 +199,7 @@ func (tx *Tx) Commit() error {
 	}
 
 	// If strict mode is enabled then perform a consistency check.
-	if tx.db.StrictMode {   // 生产不会走这里
+	if tx.db.StrictMode { // 生产不会走这里
 		ch := tx.Check()
 		var errs []string
 		for {
@@ -222,7 +222,7 @@ func (tx *Tx) Commit() error {
 	tx.stats.IncWriteTime(time.Since(startTime))
 
 	// Finalize the transaction.
-	tx.close()
+	tx.close() // 关闭tx
 
 	// Execute commit handlers now that the locks have been removed.
 	for _, fn := range tx.commitHandlers {
@@ -428,17 +428,17 @@ func (tx *Tx) allocate(count int) (*page, error) {
 func (tx *Tx) write() error {
 	// Sort pages by id.
 	pages := make(pages, 0, len(tx.pages))
-	for _, p := range tx.pages {   // 拿到tx.pages，这些pages是刚刚spill的时候，node转成的page（应该是在堆里面？）
+	for _, p := range tx.pages { // 拿到tx.pages，这些pages是刚刚spill的时候，node转成的page（应该是在堆里面？）
 		pages = append(pages, p)
 	}
 	// Clear out page cache early.
-	tx.pages = make(map[pgid]*page)  // 清理
+	tx.pages = make(map[pgid]*page) // 清理
 	sort.Sort(pages)
 
 	// Write pages to disk in order.
 	for _, p := range pages {
 		rem := (uint64(p.overflow) + 1) * uint64(tx.db.pageSize)
-		offset := int64(p.id) * int64(tx.db.pageSize)  // 初始offset = pgid * pageSize
+		offset := int64(p.id) * int64(tx.db.pageSize) // 初始offset = pgid * pageSize
 		var written uintptr
 
 		// Write out page in "max allocation" sized chunks.
@@ -447,7 +447,7 @@ func (tx *Tx) write() error {
 			if sz > maxAllocSize-1 {
 				sz = maxAllocSize - 1
 			}
-			buf := unsafeByteSlice(unsafe.Pointer(p), written, 0, int(sz))  // 拿到p + written处的指针，然后转成一个byte slice，然后切[0:sz]
+			buf := unsafeByteSlice(unsafe.Pointer(p), written, 0, int(sz)) // 拿到p + written处的指针，然后转成一个byte slice，然后切[0:sz]
 
 			if _, err := tx.db.ops.writeAt(buf, offset); err != nil { // 系统调用writeAt,写到db文件的offset位置
 				return err

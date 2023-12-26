@@ -16,7 +16,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	db.View()
 	_, err = tx.CreateBucket([]byte("test_bucket"))
 	if err != nil {
 		panic(err)
