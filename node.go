@@ -17,7 +17,7 @@ type node struct {
 	pgid       pgid
 	parent     *node  // 父节点
 	children   nodes  // 子结点
-	inodes     inodes // 存放 node 的数据
+	inodes     inodes // 存放 node 的数据，指向mmap
 }
 
 // root returns the top-level node this node is attached to.
@@ -41,7 +41,7 @@ func (n *node) size() int {
 	sz, elsz := pageHeaderSize, n.pageElementSize() // pageHeader, element
 	for i := 0; i < len(n.inodes); i++ {
 		item := &n.inodes[i]
-		sz += elsz + uintptr(len(item.key)) + uintptr(len(item.value))   // 看上去是：一个pageHeader + N个（pageElement + key + value）
+		sz += elsz + uintptr(len(item.key)) + uintptr(len(item.value)) // 看上去是：一个pageHeader + N个（pageElement + key + value）
 	}
 	return int(sz)
 }
@@ -85,7 +85,7 @@ func (n *node) childIndex(child *node) int {
 
 // numChildren returns the number of children.
 func (n *node) numChildren() int {
-	return len(n.inodes)  // inodes和nodes数量一样？
+	return len(n.inodes) // inodes和nodes数量一样？
 }
 
 // nextSibling returns the next node with the same parent.
@@ -114,7 +114,7 @@ func (n *node) prevSibling() *node {
 
 // put inserts a key/value.  写入node.inodes
 func (n *node) put(oldKey, newKey, value []byte, pgId pgid, flags uint32) {
-	if pgId >= n.bucket.tx.meta.pgid {  // 所以pgId不能高于tx.meta.pgid
+	if pgId >= n.bucket.tx.meta.pgid { // 所以pgId不能高于tx.meta.pgid
 		panic(fmt.Sprintf("pgId (%d) above high water mark (%d)", pgId, n.bucket.tx.meta.pgid))
 	} else if len(oldKey) <= 0 {
 		panic("put: zero-length old key")
@@ -132,10 +132,10 @@ func (n *node) put(oldKey, newKey, value []byte, pgId pgid, flags uint32) {
 		copy(n.inodes[index+1:], n.inodes[index:]) // 腾出n.inodes[index]这个空
 	}
 
-	inode := &n.inodes[index] // 插入
+	inode := &n.inodes[index] // 插入，inode本身在堆上
 	inode.flags = flags
-	inode.key = newKey
-	inode.value = value
+	inode.key = newKey  // inode.key指向key这个堆上内存地址
+	inode.value = value // inode.value指向value这个堆上内存地址
 	inode.pgid = pgId
 	_assert(len(inode.key) > 0, "put: zero-length inode key")
 }
@@ -159,18 +159,18 @@ func (n *node) del(key []byte) {
 
 // node 和 page 的相互转换通过 node.read(p *page) 和 node.write(p *page)
 // read initializes the node from a page. page --> node 前提是有一个已经建立好的page
-func (n *node) read(p *page) {  // 更像是用一个page来初始化一个node
+func (n *node) read(p *page) { // 更像是用一个page来初始化一个node
 	n.pgid = p.id
-	n.isLeaf = ((p.flags & leafPageFlag) != 0)
-	n.inodes = make(inodes, int(p.count))  // 各种赋值
+	n.isLeaf = ((p.flags & leafPageFlag) != 0) // 各种赋值
+	n.inodes = make(inodes, int(p.count))      // 首先inode数组是在堆上
 
-	for i := 0; i < int(p.count); i++ {  // 填充inodes
+	for i := 0; i < int(p.count); i++ { // 填充inodes，这里可以清晰看到node和page的结构对应关系
 		inode := &n.inodes[i]
 		if n.isLeaf {
 			elem := p.leafPageElement(uint16(i))
 			inode.flags = elem.flags
 			inode.key = elem.key()
-			inode.value = elem.value()
+			inode.value = elem.value() // 由于page是mmap内存区传过来的指针，所以这里可以看到inode的字段指向了mmap
 		} else {
 			elem := p.branchPageElement(uint16(i))
 			inode.pgid = elem.pgid
@@ -192,8 +192,8 @@ func (n *node) read(p *page) {  // 更像是用一个page来初始化一个node
 // write writes the items onto one or more pages.
 // The page should have p.id (might be 0 for meta or bucket-inline page) and p.overflow set
 // and the rest should be zeroed.    node ---> page 前提是有一个已经建立的node
-func (n *node) write(p *page) {   // 更像是用一个node去实例化一个page
-	_assert(p.count == 0 && p.flags == 0, "node cannot be written into a not empty page")  // 总结来说就是不断拷贝node的inode的key和value过来到p处
+func (n *node) write(p *page) { // 更像是用一个node去实例化一个page
+	_assert(p.count == 0 && p.flags == 0, "node cannot be written into a not empty page") // 总结来说就是不断拷贝node的inode的key和value过来到p处
 
 	// Initialize page.
 	if n.isLeaf {
@@ -214,15 +214,15 @@ func (n *node) write(p *page) {   // 更像是用一个node去实例化一个pag
 
 	// Loop over each item and write it to the page.
 	// off tracks the offset into p of the start of the next data.
-	off := unsafe.Sizeof(*p) + n.pageElementSize()*uintptr(len(n.inodes))   // |page| + |(pageElement) * N|
-	for i, item := range n.inodes { // 遍历node的所有inode
+	off := unsafe.Sizeof(*p) + n.pageElementSize()*uintptr(len(n.inodes)) // |page| + |(pageElement) * N|
+	for i, item := range n.inodes {                                       // 遍历node的所有inode
 		_assert(len(item.key) > 0, "write: zero-length inode key")
 
 		// Create a slice to write into of needed size and advance
 		// byte pointer for next iteration.
 		sz := len(item.key) + len(item.value)
 		b := unsafeByteSlice(unsafe.Pointer(p), off, 0, sz) // 从p + off处转成一个byte slice，然后切[0:sz]
-		off += uintptr(sz)  // off增加sz
+		off += uintptr(sz)                                  // off增加sz
 
 		// Write the page element.
 		if n.isLeaf { // node是叶子
@@ -240,8 +240,8 @@ func (n *node) write(p *page) {   // 更像是用一个node去实例化一个pag
 		}
 
 		// Write data for the element to the end of the page.
-		l := copy(b, item.key)   // 拷贝key
-		copy(b[l:], item.value)  // 拷贝value
+		l := copy(b, item.key)  // 拷贝key
+		copy(b[l:], item.value) // 拷贝value
 	}
 
 	// DEBUG ONLY: n.dump()
@@ -325,7 +325,7 @@ func (n *node) splitIndex(threshold int) (index, sz uintptr) {
 
 		// If we have at least the minimum number of keys and adding another
 		// node would put us over the threshold then exit and return.
-		if index >= minKeysPerPage && sz+elsize > uintptr(threshold) {  // 一定是minKeysPerPage之后的元素
+		if index >= minKeysPerPage && sz+elsize > uintptr(threshold) { // 一定是minKeysPerPage之后的元素
 			break
 		} // 如果当前索引大于等于每页最小键数，并且如果添加当前元素的大小会使总大小超过阈值，那么循环就会结束。这意味着找到了分裂的位置。
 
@@ -338,7 +338,7 @@ func (n *node) splitIndex(threshold int) (index, sz uintptr) {
 
 // spill writes the nodes to dirty pages and splits nodes as it goes.
 // Returns an error if dirty pages cannot be allocated.
-func (n *node) spill() error {   // spill感觉像是把一个node拆成很多小的node，然后给他们分配page，然后插入到parent
+func (n *node) spill() error { // spill感觉像是把一个node拆成很多小的node，然后给他们分配page，然后插入到parent
 	var tx = n.bucket.tx
 	if n.spilled {
 		return nil
@@ -524,21 +524,21 @@ func (n *node) removeChild(target *node) {
 // This is required when the mmap is reallocated so inodes are not pointing to stale data. 这个方法的主要作用是将 node 中的键值数据从内存映射区（mmap）拷贝到堆内存中，确保在 mmap 重新分配时，这些节点不会指向无效的数据
 func (n *node) dereference() {
 	if n.key != nil {
-		key := make([]byte, len(n.key))  // 在堆上分配内存
-		copy(key, n.key)                 // 拷贝 key 数据到新分配的内存
-		n.key = key                      // 更新节点的 key 引用到新内存
+		key := make([]byte, len(n.key)) // 在堆上分配内存，因为inode原本是指向mmap内存区的
+		copy(key, n.key)                // 拷贝 key 数据到新分配的内存
+		n.key = key                     // 更新节点的 key 引用到新内存
 		_assert(n.pgid == 0 || len(n.key) > 0, "dereference: zero-length node key on existing node")
 	}
 
 	for i := range n.inodes {
 		inode := &n.inodes[i]
 
-		key := make([]byte, len(inode.key))  // 把inode.key拷贝到另一端内存key中（和上面一样）
+		key := make([]byte, len(inode.key)) // 把inode.key拷贝到另一端内存key中（和上面一样）
 		copy(key, inode.key)
-		inode.key = key                      // 再inode.key指向key
+		inode.key = key // 再inode.key指向key
 		_assert(len(inode.key) > 0, "dereference: zero-length inode key")
 
-		value := make([]byte, len(inode.value))  // value同理
+		value := make([]byte, len(inode.value)) // value同理
 		copy(value, inode.value)
 		inode.value = value
 	}

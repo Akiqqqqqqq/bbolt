@@ -180,10 +180,10 @@ func (b *Bucket) CreateBucket(key []byte) (*Bucket, error) { // b = tx.root
 		rootNode:    &node{isLeaf: true}, // 是叶节点
 		FillPercent: DefaultFillPercent,
 	}
-	var value = bucket.write() // 1. 使用bucket计算得到value，是一个指针
+	var value = bucket.write() // 1. 使用bucket计算得到value，是一个指针，也就是要put到db的(k,v)中的v,内容是： | bucketHeader | pageHeader | elemSize * n |
 
 	// Insert into node.
-	key = cloneBytes(key)
+	key = cloneBytes(key)                            // key就是bucket名字，比如"my_bucket"， value就是堆上的一段内存：| bucketHeader | pageHeader | elemSize * n |
 	c.node().put(key, key, value, 0, bucketLeafFlag) // 2. 在node处写入value的值
 
 	// Since subbuckets are not allowed on inline buckets, we need to
@@ -298,8 +298,8 @@ func (b *Bucket) Put(key []byte, value []byte) error {
 	}
 
 	// Insert into node.
-	key = cloneBytes(key)
-	c.node().put(key, key, value, 0, 0) // 最后都是调用node.put()
+	key = cloneBytes(key)               // key和value都在堆上
+	c.node().put(key, key, value, 0, 0) // 最后都是调用node.put(),写到堆里面
 
 	return nil
 }
@@ -673,7 +673,7 @@ func (b *Bucket) node(pgId pgid, parent *node) *node { // 一开始这里传进�
 	// Use the inline page if this is an inline bucket.
 	var p = b.page
 	if p == nil { // 如果bucket没有page
-		p = b.tx.page(pgId) // 从mmap营社区拿到3号page，即leafpage
+		p = b.tx.page(pgId) // 从mmap映射区拿到3号page，即leafpage
 	}
 
 	// Read the page into the node and cache it.

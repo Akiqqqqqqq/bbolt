@@ -43,7 +43,7 @@ type Tx struct {
 
 // init initializes the transaction.
 func (tx *Tx) init(db *DB) {
-	tx.db = db     // tx指向db
+	tx.db = db     // tx指向db，里面有mmap指针
 	tx.pages = nil // 应该是tx的page缓存吧 <pgid, page>
 
 	// Copy the meta page since it can be changed by the writer.

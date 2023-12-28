@@ -276,7 +276,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	// Initialize page pool.  页池
 	db.pagePool = sync.Pool{
 		New: func() interface{} {
-			return make([]byte, db.pageSize)   // 调用pagePool.Get()会返回一个长度为4kb的[]byte
+			return make([]byte, db.pageSize) // 调用pagePool.Get()会返回一个长度为4kb的[]byte
 		},
 	}
 
@@ -412,7 +412,7 @@ func (db *DB) loadFreelist() {
 			db.freelist.readIDs(db.freepages())
 		} else { // 第一次进入这里, 这里完成了f.ids = nil
 			// Read free list from freelist page.
-			db.freelist.read(db.page(db.meta().freelist)) // db.meta().freelist初始为pgid=2; db.page(db.meta().freelist)拿到第3个page, 也就是freelistPage类型的page
+			db.freelist.read(db.page(db.meta().freelist)) // db.meta().freelist = 2 --> 拿到第3个page, 也就是freelistPage类型的page；然后read，就是把mmap上的freelist page给实例化到堆上的对象
 		}
 		db.stats.FreePageN = db.freelist.free_count() // 第一次为0
 	})
@@ -488,7 +488,7 @@ func (db *DB) mmap(minsz int) (err error) {
 	}
 
 	// Save references to the meta pages.
-	db.meta0 = db.page(0).meta()
+	db.meta0 = db.page(0).meta() // 拿到page地址  --> 拿到meta地址 --> db.meta0引用
 	db.meta1 = db.page(1).meta()
 
 	// Validate the meta pages. We only return an error if both meta pages fail
@@ -792,7 +792,7 @@ func (db *DB) beginRWTx() (*Tx, error) {
 
 	// Create a transaction associated with the database.
 	t := &Tx{writable: true}
-	t.init(db)     // 主要就是new了tx，拷贝了rootPage和freeListPage的信息到tx；还给tx new了一些node、page缓存的容器
+	t.init(db)     // 主要就是new了tx，拷贝了rootPage和freeListPage的信息到tx；还给tx new了一些node、page缓存的容器；init的时候，tx只是做准备，还没有实际copy那些数据，tx里面都是空的
 	db.rwtx = t    // 赋值db读写事务（由于是单线程的，所以db的rwtx是单例的）
 	db.freePages() // 释放已关闭的只读事务的页缓存
 	return t, nil
@@ -801,10 +801,10 @@ func (db *DB) beginRWTx() (*Tx, error) {
 // freePages releases any pages associated with closed read-only transactions.
 func (db *DB) freePages() { //看不懂
 	// Free all pending pages prior to earliest open transaction.
-	sort.Sort(txsById(db.txs))
+	sort.Sort(txsById(db.txs)) // 这里应该都是只读事务吧
 	minid := txid(0xFFFFFFFFFFFFFFFF)
 	if len(db.txs) > 0 {
-		minid = db.txs[0].meta.txid
+		minid = db.txs[0].meta.txid // db.txs里面最小的txid
 	}
 	if minid > 0 {
 		db.freelist.release(minid - 1)

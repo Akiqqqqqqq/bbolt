@@ -279,7 +279,7 @@ func (c *Cursor) search(key []byte, pgId pgid) { // (seek, c.Bucket.bucket.root(
 	// If we're on a leaf page/node then find the specific node.
 	if e.isLeaf() { // 如果是一个叶子 页/node，那就执行一个非递归的简单二分搜索（因为已经到叶子了，不能再往下走了）这里是递归终止的地方
 		c.nsearch(key)
-		return
+		return // 找到leaf，搜索后，不管结果，一定会返回
 	}
 
 	if n != nil { // 有node就搜node
@@ -347,31 +347,31 @@ func (c *Cursor) nsearch(key []byte) {
 	}
 
 	// If we have a page then search its leaf elements. // 没node就搜page
-	inodes := p.leafPageElements() // 取回在p后面的一个列表的leafPageElement
+	inodes := p.leafPageElements() // 取回在p后面的一个列表的leafPageElement，也就是pageElement数组
 	index := sort.Search(int(p.count), func(i int) bool {
 		return bytes.Compare(inodes[i].key(), key) != -1 // 搜索这个key
-	})
-	e.index = index // 赋值elemRef.index
+	}) // 搜索这个pageElement数组，找到key相同的
+	e.index = index // 赋值到e(elemRef.index)，也就是stack的顶层元素
 }
 
 // keyValue returns the key and value of the current leaf element.
 func (c *Cursor) keyValue() ([]byte, []byte, uint32) { // 如果啥也没找到，就返回 nil, nil, 0
-	ref := &c.stack[len(c.stack)-1] // 取出elemRef，也就是seek
+	ref := &c.stack[len(c.stack)-1] // 取出elemRef，也就是seek，就是stack的顶层元素
 
 	// If the cursor is pointing to the end of page/node then return nil.
 	if ref.count() == 0 || ref.index >= ref.count() { // index是seek的索引，如果index大于kv数量，则是搜到尾巴了
-		return nil, nil, 0
+		return nil, nil, 0 // 没找到
 	}
 
 	// Retrieve value from node.
 	if ref.node != nil { // 如果node不为空，则从node拿
 		inode := &ref.node.inodes[ref.index]
-		return inode.key, inode.value, inode.flags   // 直接从node获取目标kv值
+		return inode.key, inode.value, inode.flags // 直接从node获取目标kv值
 	}
 
 	// Or retrieve value from page. 如果node为空，则从page拿
 	elem := ref.page.leafPageElement(uint16(ref.index))
-	return elem.key(), elem.value(), elem.flags   // 从page获取目标kv值
+	return elem.key(), elem.value(), elem.flags // 从page获取目标kv值
 }
 
 // node returns the node that the cursor is currently positioned on.
@@ -379,14 +379,14 @@ func (c *Cursor) node() *node {
 	_assert(len(c.stack) > 0, "accessing a node with a zero-length cursor stack")
 
 	// If the top of the stack is a leaf node then just return it.
-	if ref := &c.stack[len(c.stack)-1]; ref.node != nil && ref.isLeaf() {
-		return ref.node
+	if ref := &c.stack[len(c.stack)-1]; ref.node != nil && ref.isLeaf() { // 拿到栈顶元素
+		return ref.node // 如果是node且是leaf，就直接返回node
 	}
 
 	// Start from root and traverse down the hierarchy.
-	var n = c.stack[0].node // 从根(root=3)开始
+	var n = c.stack[0].node // 从根(root=3)开始；栈底，第一个进去的，就是root
 	if n == nil {
-		n = c.bucket.node(c.stack[0].page.id, nil) // 根都没有，创建一个node；比如最开始的时候；这里很重要！
+		n = c.bucket.node(c.stack[0].page.id, nil) // 根都没有，创建一个node；比如最开始的时候；这里很重要！   每一个node的inode，都指向对应page的mmap内存区
 	}
 	for _, ref := range c.stack[:len(c.stack)-1] { // 从0到len(c.stack)-1遍历stack上的元素；相当于再走一遍stack上面的路径
 		_assert(!n.isLeaf, "expected branch node")
