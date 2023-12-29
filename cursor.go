@@ -269,17 +269,17 @@ func (c *Cursor) prev() (key []byte, value []byte, flags uint32) {
 
 // search recursively performs a binary search against a given page/node until it finds a given key.
 func (c *Cursor) search(key []byte, pgId pgid) { // (seek, c.Bucket.bucket.root(pgid=3,就是指向leafPage))
-	p, n := c.bucket.pageNode(pgId)                               // 拿到leafPage和node(nil)
-	if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 { // 必须是branchPage 或 leafPage
+	p, n := c.bucket.pageNode(pgId)                               // 拿到那个pgid的page和node(nil)
+	if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 { // page必须是branch 或 leaf
 		panic(fmt.Sprintf("invalid page type: %d: %x", p.id, p.flags))
 	}
-	e := elemRef{page: p, node: n}
-	c.stack = append(c.stack, e) // 压到栈顶（往后递归会一直append到栈顶）最后一个e就是那个seek的e，e.p就是seek的page，e.n就是seek的node
+	e := elemRef{page: p, node: n} // 把这个page/node，也就是b+树节点，包装成elemRef
+	c.stack = append(c.stack, e)   // 压到栈顶（往后递归会一直append到栈顶）最后一个e就是那个seek的e，e.p就是seek的page，e.n就是seek的node
 
 	// If we're on a leaf page/node then find the specific node.
 	if e.isLeaf() { // 如果是一个叶子 页/node，那就执行一个非递归的简单二分搜索（因为已经到叶子了，不能再往下走了）这里是递归终止的地方
-		c.nsearch(key)
-		return // 找到leaf，搜索后，不管结果，一定会返回
+		c.nsearch(key) // 在一个node上search
+		return         // 找到leaf，搜索后，不管结果，一定会返回
 	}
 
 	if n != nil { // 有node就搜node
@@ -293,25 +293,25 @@ func (c *Cursor) searchNode(key []byte, n *node) {
 	var exact bool
 	index := sort.Search(len(n.inodes), func(i int) bool {
 		// TODO(benbjohnson): Optimize this range search. It's a bit hacky right now.
-		// sort.Search() finds the lowest index where f() != -1 but we need the highest index.
-		ret := bytes.Compare(n.inodes[i].key, key)
-		if ret == 0 {
+		// sort.Search() finds the lowest index where f() != -1 but we need the highest index.      |  1  |  11  |  30  |
+		ret := bytes.Compare(n.inodes[i].key, key) // 0 if a == b; -1 if a < b; +1 if a > b           / \    / \    / \
+		if ret == 0 {                              //		                                        |1|3|8| |11|25| |30|80|   现在搜key=25,应该会返回 exact=false, index=11
 			exact = true
 		}
-		return ret != -1
-	})
-	if !exact && index > 0 {
-		index--
+		return ret != -1 // 如果找到了，ret就是0，这里返回true, Search返回i; 如果ret为+1，则n.inodes[middle].key > key，也返回true; 如果ret为-1，则n.inodes[middle].key < key，返回false
+	}) // branchNode上应该不会发生exact=true的事情吧？
+	if !exact && index > 0 { // 如果key一直>[middle].key,最后发现key>[max].key，即key大于所有inode，则exact=false 且 index>0; Search会返回len(inodes)
+		index-- // 减一，index指向 n.inodes 中最后一个键，即j；
 	}
-	c.stack[len(c.stack)-1].index = index
+	c.stack[len(c.stack)-1].index = index // 赋值给顶层元素
 
 	// Recursively search to the next page.
-	c.search(key, n.inodes[index].pgid) // 递归
+	c.search(key, n.inodes[index].pgid) // 递归搜索这个index的inode的pgid
 }
 
 func (c *Cursor) searchPage(key []byte, p *page) {
 	// Binary search for the correct range.
-	inodes := p.branchPageElements()
+	inodes := p.branchPageElements() // 拿到branchElement数组
 
 	var exact bool
 	index := sort.Search(int(p.count), func(i int) bool {
@@ -333,8 +333,8 @@ func (c *Cursor) searchPage(key []byte, p *page) {
 }
 
 // nsearch searches the leaf node on the top of the stack for a key.
-func (c *Cursor) nsearch(key []byte) {
-	e := &c.stack[len(c.stack)-1] // 这里面有一个root的elemRef
+func (c *Cursor) nsearch(key []byte) { // 总结：搜索leafPageElements数组, 最终目的是给顶层 e 赋值index，意思是e所在node数组，上面在index的那个元素就是搜索结果
+	e := &c.stack[len(c.stack)-1] // 拿到栈顶的elemRef
 	p, n := e.page, e.node        // node是nil
 
 	// If we have a node then search its inodes.
@@ -347,7 +347,7 @@ func (c *Cursor) nsearch(key []byte) {
 	}
 
 	// If we have a page then search its leaf elements. // 没node就搜page
-	inodes := p.leafPageElements() // 取回在p后面的一个列表的leafPageElement，也就是pageElement数组
+	inodes := p.leafPageElements() // 取回在pageHeader后面的一个列表的leafPageElement，也就是pageElement数组
 	index := sort.Search(int(p.count), func(i int) bool {
 		return bytes.Compare(inodes[i].key(), key) != -1 // 搜索这个key
 	}) // 搜索这个pageElement数组，找到key相同的
@@ -365,13 +365,13 @@ func (c *Cursor) keyValue() ([]byte, []byte, uint32) { // 如果啥也没找到�
 
 	// Retrieve value from node.
 	if ref.node != nil { // 如果node不为空，则从node拿
-		inode := &ref.node.inodes[ref.index]
+		inode := &ref.node.inodes[ref.index]       // 直接取e.index所在元素
 		return inode.key, inode.value, inode.flags // 直接从node获取目标kv值
 	}
 
 	// Or retrieve value from page. 如果node为空，则从page拿
-	elem := ref.page.leafPageElement(uint16(ref.index))
-	return elem.key(), elem.value(), elem.flags // 从page获取目标kv值
+	elem := ref.page.leafPageElement(uint16(ref.index)) // 直接取e.index所在元素
+	return elem.key(), elem.value(), elem.flags         // 从page获取目标k、v、flag值
 }
 
 // node returns the node that the cursor is currently positioned on.

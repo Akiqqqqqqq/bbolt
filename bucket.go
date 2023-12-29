@@ -30,7 +30,7 @@ type Bucket struct { // 每个Bucket都是一个独立的B+树;
 	*bucket                     // type bucket
 	tx       *Tx                // the associated transaction  和Bucket关联的Tx
 	buckets  map[string]*Bucket // subbucket cache   嵌套Bucket
-	page     *page              // inline page reference
+	page     *page              // inline page reference   inline bucket是有一个page成员的
 	rootNode *node              // materialized node for the root page.  root page转成node化
 	nodes    map[pgid]*node     // node cache
 
@@ -164,7 +164,7 @@ func (b *Bucket) CreateBucket(key []byte) (*Bucket, error) { // b = tx.root
 
 	// Move cursor to correct position.
 	c := b.Cursor()
-	k, _, flags := c.seek(key) // nil, nil, 0表示啥也没找到
+	k, _, flags := c.seek(key) // (b+树节点的 key, value, flag) nil, nil, 0表示啥也没找到
 
 	// Return an error if there is an existing key.
 	if bytes.Equal(key, k) {
