@@ -377,7 +377,7 @@ func (n *node) spill() error { // spill感觉像是把一个node拆成很多小�
 			panic(fmt.Sprintf("pgid (%d) above high water mark (%d)", p.id, tx.meta.pgid))
 		}
 		node.pgid = p.id
-		node.write(p) // 用一个node去实例化一个page
+		node.write(p) // 用一个node去实例化一个page；这个page装在tx.pages上的
 		node.spilled = true
 
 		// Insert into parent inodes.

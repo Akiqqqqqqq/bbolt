@@ -727,7 +727,7 @@ func (db *DB) beginTx() (*Tx, error) { // 开启只读事务
 	// Obtain a read-only lock on the mmap. When the mmap is remapped it will
 	// obtain a write lock so all transactions must finish before it can be
 	// remapped.
-	db.mmaplock.RLock() // 锁住这个mmap区域；在remap前，所有tx必须完成
+	db.mmaplock.RLock() // Read锁住这个mmap区域；在remap前，所有tx必须完成
 
 	// Exit if the database is not open yet.
 	if !db.opened {
@@ -752,7 +752,7 @@ func (db *DB) beginTx() (*Tx, error) { // 开启只读事务
 	n := len(db.txs)
 
 	// Unlock the meta pages.
-	db.metalock.Unlock() // 解锁meta
+	db.metalock.Unlock() // 解锁meta，但是没有解锁mmap喔
 
 	// Update the transaction stats.
 	db.statlock.Lock()
@@ -1108,7 +1108,7 @@ func (db *DB) allocate(txid txid, count int) (*page, error) {
 	// Allocate a temporary buffer for the page.
 	var buf []byte
 	if count == 1 {
-		buf = db.pagePool.Get().([]byte) // 这个页是在堆上？
+		buf = db.pagePool.Get().([]byte) // 这个页是在堆上？对
 	} else {
 		buf = make([]byte, count*db.pageSize)
 	}

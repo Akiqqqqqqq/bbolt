@@ -193,7 +193,7 @@ func (tx *Tx) Commit() error {
 
 	// Write dirty pages to disk.
 	startTime = time.Now()
-	if err := tx.write(); err != nil { // 调用writeAt和fsync系统调用来写磁盘
+	if err := tx.write(); err != nil { // 调用writeAt和fsync系统调用来把tx.pages里面的内容写到磁盘
 		tx.rollback()
 		return err
 	}
@@ -317,7 +317,7 @@ func (tx *Tx) close() {
 		tx.db.stats.TxStats.add(&tx.stats)
 		tx.db.statlock.Unlock()
 	} else {
-		tx.db.removeTx(tx)
+		tx.db.removeTx(tx)   // 这里面会解锁mmap的读写锁
 	}
 
 	// Clear all references.
@@ -409,13 +409,13 @@ func (tx *Tx) CopyFile(path string, mode os.FileMode) error {
 
 // allocate returns a contiguous block of memory starting at a given page.
 func (tx *Tx) allocate(count int) (*page, error) {
-	p, err := tx.db.allocate(tx.meta.txid, count)
+	p, err := tx.db.allocate(tx.meta.txid, count)  // 堆上分配page
 	if err != nil {
 		return nil, err
 	}
 
 	// Save to our page cache.
-	tx.pages[p.id] = p
+	tx.pages[p.id] = p    // 这里保存了对p的引用，后续可以从这里追回；也就是说，node的数据稍后会spill到tx.pages上
 
 	// Update statistics.
 	tx.stats.IncPageCount(int64(count))
@@ -428,11 +428,11 @@ func (tx *Tx) allocate(count int) (*page, error) {
 func (tx *Tx) write() error {
 	// Sort pages by id.
 	pages := make(pages, 0, len(tx.pages))
-	for _, p := range tx.pages { // 拿到tx.pages，这些pages是刚刚spill的时候，node转成的page（应该是在堆里面？）
-		pages = append(pages, p)
+	for _, p := range tx.pages { // 拿到tx.pages，这些pages是刚刚spill的时候，node转成的page（应该是在堆里面？对，都在堆里面）
+		pages = append(pages, p)  // 拷贝到pages里面来
 	}
 	// Clear out page cache early.
-	tx.pages = make(map[pgid]*page) // 清理
+	tx.pages = make(map[pgid]*page) // 清理缓存的p
 	sort.Sort(pages)
 
 	// Write pages to disk in order.
