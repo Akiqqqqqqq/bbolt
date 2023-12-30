@@ -70,8 +70,8 @@ func (n *node) pageElementSize() uintptr {
 }
 
 // childAt returns the child node at a given index.
-func (n *node) childAt(index int) *node {
-	if n.isLeaf {
+func (n *node) childAt(index int) *node {  // 这里也会去填充bucket.nodes
+	if n.isLeaf {  // n不能是leaf
 		panic(fmt.Sprintf("invalid childAt(%d) on a leaf node", index))
 	}
 	return n.bucket.node(n.inodes[index].pgid, n) // 根据pgId、和node本身，得到、或者创建并存入这个node到bucket
@@ -113,7 +113,7 @@ func (n *node) prevSibling() *node {
 }
 
 // put inserts a key/value.  写入node.inodes
-func (n *node) put(oldKey, newKey, value []byte, pgId pgid, flags uint32) {
+func (n *node) put(oldKey, newKey, value []byte, pgId pgid, flags uint32) {  // 在leaf上put k,v
 	if pgId >= n.bucket.tx.meta.pgid { // 所以pgId不能高于tx.meta.pgid
 		panic(fmt.Sprintf("pgId (%d) above high water mark (%d)", pgId, n.bucket.tx.meta.pgid))
 	} else if len(oldKey) <= 0 {
@@ -123,7 +123,7 @@ func (n *node) put(oldKey, newKey, value []byte, pgId pgid, flags uint32) {
 	}
 
 	// Find insertion index.
-	index := sort.Search(len(n.inodes), func(i int) bool { return bytes.Compare(n.inodes[i].key, oldKey) != -1 })
+	index := sort.Search(len(n.inodes), func(i int) bool { return bytes.Compare(n.inodes[i].key, oldKey) != -1 })   // 在这个inodes（leaf）上再搜一次key
 
 	// Add capacity and shift nodes if we don't have an exact match and need to insert.
 	exact := (len(n.inodes) > 0 && index < len(n.inodes) && bytes.Equal(n.inodes[index].key, oldKey))

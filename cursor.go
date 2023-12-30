@@ -348,7 +348,7 @@ func (c *Cursor) nsearch(key []byte) { // 总结：搜索leafPageElements数组,
 
 	// If we have a page then search its leaf elements. // 没node就搜page
 	inodes := p.leafPageElements() // 取回在pageHeader后面的一个列表的leafPageElement，也就是pageElement数组
-	index := sort.Search(int(p.count), func(i int) bool {
+	index := sort.Search(int(p.count), func(i int) bool {  // 记住：boltdb里面，search出来index为0，则插入左边；index为n，则插入右边
 		return bytes.Compare(inodes[i].key(), key) != -1 // 搜索这个key
 	}) // 搜索这个pageElement数组，找到key相同的
 	e.index = index // 赋值到e(elemRef.index)，也就是stack的顶层元素
@@ -389,11 +389,11 @@ func (c *Cursor) node() *node {
 		n = c.bucket.node(c.stack[0].page.id, nil) // 根都没有，创建一个node；比如最开始的时候；这里很重要！   每一个node的inode，都指向对应page的mmap内存区
 	}
 	for _, ref := range c.stack[:len(c.stack)-1] { // 从0到len(c.stack)-1遍历stack上的元素；相当于再走一遍stack上面的路径
-		_assert(!n.isLeaf, "expected branch node")
-		n = n.childAt(ref.index)
+		_assert(!n.isLeaf, "expected branch node")   // range c.stack[:len(c.stack)-1]是遍历除了最后一个元素，也就是说最后一个元素是leaf
+		n = n.childAt(ref.index)   // 这里会一路填充bucket.nodes，也就是把路径上的page转成node缓存起来
 	}
 	_assert(n.isLeaf, "expected leaf node")
-	return n
+	return n   // 最后得到的肯定是一个leaf元素
 }
 
 // elemRef represents a reference to an element on a given page/node.

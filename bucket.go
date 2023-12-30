@@ -56,7 +56,7 @@ func newBucket(tx *Tx) Bucket {
 	var b = Bucket{tx: tx, FillPercent: DefaultFillPercent} // 简简单单new了一个结构体出来
 	if tx.writable {                                        // 读写事务才有下面的缓存
 		b.buckets = make(map[string]*Bucket) // 嵌套bucket
-		b.nodes = make(map[pgid]*node)       // bucket下的nodes
+		b.nodes = make(map[pgid]*node)       // bucket下的nodes  (注意，每次new一个Tx，都会新创建b.nodes，说明b.nodes是每次TX都是新的，所以node构成的tree都是每次随tx创建而创建的)
 	}
 	return b
 }
@@ -654,7 +654,7 @@ func (b *Bucket) rebalance() {
 }
 
 // node creates a node from a page and associates it with a given parent.
-func (b *Bucket) node(pgId pgid, parent *node) *node { // 一开始这里传进来pgid=3
+func (b *Bucket) node(pgId pgid, parent *node) *node { // 一开始这里传进来pgid=3；这个函数其实应该叫getOrCreate，这里会去把"创建"的node存到b.nodes缓存; 一般是在put/del的时候，会有这个操作; cursor.nodes遍历的时候也会
 	_assert(b.nodes != nil, "nodes map expected")
 
 	// Retrieve node if it's already been created.
