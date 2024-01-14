@@ -306,7 +306,7 @@ func (tx *Tx) close() {
 
 		// Remove transaction ref & writer lock.
 		tx.db.rwtx = nil
-		tx.db.rwlock.Unlock()
+		tx.db.rwlock.Unlock()    // 这里才unlock，相当于写事务的独占锁释放
 
 		// Merge statistics.
 		tx.db.statlock.Lock()
@@ -316,7 +316,7 @@ func (tx *Tx) close() {
 		tx.db.stats.FreelistInuse = freelistAlloc
 		tx.db.stats.TxStats.add(&tx.stats)
 		tx.db.statlock.Unlock()
-	} else {
+	} else {    // 如果是只读事务
 		tx.db.removeTx(tx)   // 这里面会解锁mmap的读写锁
 	}
 

@@ -35,6 +35,10 @@ func main() {
 	if err != nil {
 		return
 	}
+	err = tx.Commit()
+	if err != nil {
+		panic(err)
+	}
 
 	// TODO: 看看只读事务、好像就是copy了meta，append到了db.txs
 	// 以及db.Update(func)的逻辑: 就是帮你写了begin和commit

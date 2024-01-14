@@ -827,7 +827,7 @@ func (t txsById) Less(i, j int) bool { return t[i].meta.txid < t[j].meta.txid }
 // removeTx removes a transaction from the database.
 func (db *DB) removeTx(tx *Tx) {
 	// Release the read lock on the mmap.
-	db.mmaplock.RUnlock()
+	db.mmaplock.RUnlock()  // 释放mmap读写锁
 
 	// Use the meta lock to restrict access to the DB object.
 	db.metalock.Lock()
